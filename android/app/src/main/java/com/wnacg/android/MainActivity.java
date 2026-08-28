@@ -52,6 +52,9 @@ public class MainActivity extends Activity {
         out = (TextView) findViewById(R.id.output);
         Button run = (Button) findViewById(R.id.run);
 
+        // On first launch (Android 11+), open the All-Files-Access grant page so
+        // downloads can go to /sdcard/downloads. The toggle lives on the app-info
+        // page, not the empty "权限管理" list — we explain that in the output box.
         requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
@@ -73,28 +76,30 @@ public class MainActivity extends Activity {
         return lib.getAbsolutePath();
     }
 
-    /** On Android 11+ (API 30+) writing to /sdcard/wnacg needs the
-     *  MANAGE_EXTERNAL_STORAGE (All Files Access) permission. We open the system
-     *  settings page and let the user grant it; if that specific page isn't
-     *  exposed by the ROM (some Android 16 builds), we fall back to the app's
-     *  general settings page. If even that fails, we just keep using the
-     *  app-private dir — downloads still work, just not on /sdcard. */
+    /** Open the system "All Files Access" grant page so the user can enable
+     *  MANAGE_EXTERNAL_STORAGE. On Android 11+ this is a special-app permission;
+     *  ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION jumps straight to the per-app
+     *  "所有文件访问权限" toggle (it lives on the app-info page, NOT in the
+     *  runtime "权限管理" list — that list only shows normal permissions, which
+     *  is why it looks empty). If that dedicated page isn't exposed we fall back
+     *  to the general app-info page; the toggle is still there, just scroll down. */
     private void requestStorageAccess() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return; // API 29 and below: not needed
         if (Environment.isExternalStorageManager()) return;       // already granted
-        append("需要「所有文件访问」权限才能下载到 /sdcard/wnacg\n正在打开授权页…\n");
+        append("正在打开「所有文件访问」授权页…\n");
+        append("(该开关在应用信息页里, 不在「权限管理」列表; 若打开的是应用属性页, 请往下滑找「所有文件访问权限」并开启)\n");
         try {
             Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
         } catch (Exception e1) {
-            // ROM didn't expose that exact page — try the general app settings.
+            // dedicated page not exposed — fall back to app-info page
             try {
                 Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                 intent.setData(Uri.parse("package:" + getPackageName()));
                 startActivity(intent);
             } catch (Exception e2) {
-                append("无法自动打开授权页: " + e1.getMessage() + "\n(可手动在系统设置里授予存储权限，或不授权改用 app 私有目录)\n");
+                append("无法自动打开授权页: " + e1.getMessage() + "\n可手动去 设置→应用→wnacg→所有文件访问权限 开启\n");
             }
         }
     }
@@ -124,6 +129,16 @@ public class MainActivity extends Activity {
         // never has to remember a path. Only when no extra arg is present.
         String[] tok = args.trim().split("\\s+");
         if (tok.length >= 1 && tok[0].equals("download") && tok.length == 2) {
+            // On Android 11+, if All-Files access isn't granted yet, open the
+            // system grant page (the real "所有文件访问" toggle) BEFORE running,
+            // so the user can enable it; this run still falls back to the
+            // app-private dir, the next run lands in /sdcard/downloads.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                !Environment.isExternalStorageManager()) {
+                append("未授予「所有文件访问」权限, 正在打开授权页…\n");
+                append("请在该页面找到「所有文件访问权限」(或「允许管理所有文件」)并开启, 返回后重跑 download\n");
+                requestStorageAccess();
+            }
             args = args + " " + defaultDownloadDir();
         }
         try {
