@@ -24,9 +24,9 @@ mkdir -p "$OUT" "$WORK"
 
 echo "[apk] using build-tools $BT_VER"
 
-# 1) Resources -> compiled flat res archive.
-echo "[apk] aapt2 compile resources ..."
-"$BT/aapt2" compile --dir "$APP_ROOT/res" -o "$WORK/res.zip"
+# 1) Resources are compiled directly from the source dir during link (aapt2
+#    -S). (A two-step compile+`-R` overlay fails because we have no base APK to
+#    override, producing "resource ... does not override an existing resource".)
 
 # 2) Link: manifest + resources + assets (the native binary lives in assets/).
 echo "[apk] aapt2 link ..."
@@ -34,7 +34,7 @@ echo "[apk] aapt2 link ..."
     -o "$WORK/app-unsigned.apk" \
     -I "$PLAT/android.jar" \
     --manifest "$APP_ROOT/AndroidManifest.xml" \
-    -R "$WORK/res.zip" \
+    -S "$APP_ROOT/res" \
     -A "$APP_ROOT/assets" \
     --min-sdk-version 9 --target-sdk-version 9 \
     --rename-manifest-package com.wnacg.android
