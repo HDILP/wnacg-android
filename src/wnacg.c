@@ -88,9 +88,15 @@ int cmd_search(int argc, char **argv, int is_tag) {
     char qenc[2048];
     url_encode(kw, qenc, sizeof(qenc));
     if (is_tag) {
+        /* NOTE: the legacy route /albums-index-page-N-tag-X.html is dead on the
+         * current mobile site (returns 200 but zero items). The working tag
+         * endpoint is the search page with f=tag. It returns the same
+         * gallary_item list layout as a normal search, so parsing is identical.
+         * Caveat: the server only serves page 1 for f=tag (p>=2 returns empty);
+         * we surface that to the user below. */
         snprintf(url, sizeof(url),
-                 "https://" DEFAULT_API_DOMAIN "/albums-index-page-%d-tag-%s.html",
-                 page, qenc);
+                 "https://" DEFAULT_API_DOMAIN "/search/index.php?q=%s&syn=yes&f=tag&s=create_time_DESC&p=%d",
+                 qenc, page);
     } else {
         snprintf(url, sizeof(url),
                  "https://" DEFAULT_API_DOMAIN "/search/index.php?q=%s&syn=yes&f=_all&s=create_time_DESC&p=%d",
@@ -118,6 +124,11 @@ int cmd_search(int argc, char **argv, int is_tag) {
 
     printf("=== 搜索 \"%s\" 第 %ld/%ld 页, 共 %d 条 ===\n", kw, s.current_page,
            s.total_page, s.count);
+    if (is_tag && page > 1) {
+        printf("注意: 站点对 f=tag 只返回第1页, 后续页服务端为空 (这是站点限制, 非解析问题)\n");
+    } else if (is_tag) {
+        printf("注意: tag 模式仅第1页有结果 (站点限制), 翻页可能为空\n");
+    }
     for (int i = 0; i < s.count; i++) {
         printf("[%ld] %s\n      图: %s\n", s.items[i].id,
                s.items[i].title ? s.items[i].title : "(无标题)",

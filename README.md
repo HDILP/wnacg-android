@@ -30,8 +30,8 @@
 ## 命令行用法（原生二进制）
 
 ```
-wnacg search   <关键词> [页码]          搜索漫画
-wnacg tag      <标签>   [页码]          按标签搜索
+wnacg search   <关键词> [页码]          搜索漫画（全字段模糊，f=_all）
+wnacg tag      <标签>   [页码]          按标签搜索（f=tag）
 wnacg download <漫画ID> [保存目录]      下载整本到目录（单线程）
 wnacg detail   <漫画ID>                 打印漫画详情（图数/标签）
 ```
@@ -44,6 +44,8 @@ wnacg download 257351 /sdcard/wnacg
 ```
 
 > 默认域名：`www.wn09.shop`（在 `src/wnacg.c`、`Makefile`、说明注释里各一处；改域名时三处一起改）。
+
+> 关于 `tag`：旧版路由 `/albums-index-page-N-tag-X.html` 在当前移动站已失效（返回 200 但无结果），现改为走搜索接口的 `f=tag` 端点，返回结构与 `search` 一致。限制：站点对 `f=tag` 只返回第 1 页（第 2 页起服务端返回空），所以 `tag` 模式实际只能看第一页结果——这是站点行为，非解析 bug。需要更多结果时可改用 `search`。
 
 ---
 
