@@ -53,16 +53,16 @@ if [ ! -f "$BS_LIB_ANDROID" ]; then
              lib)
 fi
 
-# 2) Cross-compile the app (static against the NDK libc, no shared deps).
+# 2) Cross-compile the app (dynamically links against bionic, which is present
+#    on every Android device — the binary is still a single self-contained file).
 mkdir -p "$OUT_DIR"
 echo "[android] compiling wnacg (arm, static) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
-    -O2 -std=c99 -D_GNU_SOURCE -static \
+    -O2 -std=c99 -D_GNU_SOURCE \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c \
-    -o "$OUT_BIN" "$BS_LIB_ANDROID" \
-    -lc -lm -ldl
+    -o "$OUT_BIN" "$BS_LIB_ANDROID"
 
 "$TC-strip" "$OUT_BIN" 2>/dev/null || true
 echo "[android] wrote $OUT_BIN ($(wc -c < "$OUT_BIN") bytes)"
