@@ -53,11 +53,22 @@ jobs:
       - name: Cross-compile native binary for Android (API 9, armeabi)
         env:
           ANDROID_NDK_HOME: /opt/android-ndk-r16b
+          LD_LIBRARY_PATH: /usr/lib/x86_64-linux-gnu:$HOME
         run: |
           # r16b's make-standalone-toolchain.sh may invoke `python`; the runner
           # only ships python3, so provide a shim on PATH.
           mkdir -p /opt/pybin && ln -sf "$(command -v python3)" /opt/pybin/python
           export PATH=/opt/pybin:$PATH
+          # r16b's ar/gcc wrappers dlopen libncurses.so.5; modern runners only
+          # have libtinfo (ncurses 6). Provide a shim so the old binaries load.
+          if ! ldconfig -p 2>/dev/null | grep -q libncurses.so.5; then
+            TINFO=$(ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libtinfo\.so[^ ]*' | head -1)
+            if [ -n "$TINFO" ]; then
+              sudo ln -sf "$TINFO" /usr/lib/x86_64-linux-gnu/libncurses.so.5 2>/dev/null \
+                || ln -sf "$TINFO" "$HOME/libncurses.so.5"
+              echo "[ci] libncurses.so.5 shim -> $TINFO"
+            fi
+          fi
           ./build-android.sh
 
       - name: Package APK (aapt2 + d8 + apksigner)
