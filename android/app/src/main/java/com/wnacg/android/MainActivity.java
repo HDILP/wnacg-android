@@ -8,12 +8,9 @@ import android.widget.TextView;
 import android.util.Log;
 
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
-import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.FileOutputStream;
 
 import android.content.pm.PackageManager;
 import android.content.Intent;
@@ -25,19 +22,22 @@ import android.provider.Settings;
 /**
  * Minimal shell for the native wnacg binary.
  *
- * The C binary is bundled in assets/ as "wnacg". On first launch we extract it
- * to the app's private data dir, chmod 0700, then drive it with Runtime.exec.
- * We deliberately avoid any JNI / NDK glue and avoid the platform TLS stack:
- * the binary links BearSSL statically and does its own TLS, so it works on
- * Android 2.3 (API 9) where the system SSL is hopelessly dated.
+ * The C binary is compiled as a shared object named libwnacg.so and packaged as a
+ * native library under jniLibs/. At install time the system extracts it into the
+ * app's nativeLibraryDir, which is one of the few places exec() is allowed on
+ * modern Android (API 29+ forbids executing from the app's own data/files dir
+ * and from assets). On API 9 the same path works fine. So a single layout covers
+ * 2.3 through 16.
  *
- * Certificate validation is OFF in the binary by default (the site's CA chain
- * is not in the 2010 trust store); this is a pragmatic trade-off for a download
- * tool, documented in the README.
+ * The binary links BearSSL statically and does its own TLS, so it works on
+ * Android 2.3 (API 9) where the system SSL is hopelessly dated. Certificate
+ * validation is OFF in the binary by default (the site's CA chain is not in the
+ * 2010 trust store); pragmatic trade-off for a download tool, documented in the
+ * README.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "wnacg";
-    private static final String ASSET = "wnacg";
+    private static final String LIB_NAME = "wnacg";   // -> libwnacg.so
     private TextView out;
     private EditText cmd;
 
@@ -50,7 +50,6 @@ public class MainActivity extends Activity {
         out = (TextView) findViewById(R.id.output);
         Button run = (Button) findViewById(R.id.run);
 
-        ensureBinary();
         requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
@@ -62,49 +61,39 @@ public class MainActivity extends Activity {
         });
     }
 
+    /** Resolve the on-disk path of libwnacg.so.
+     *  The binary is packaged as a native library (jniLibs), so the system
+     *  installs it into nativeLibraryDir — the only path where exec() is allowed
+     *  on modern Android (API 29+ blocks exec from data/files and assets). On
+     *  Gingerbread (API 9) this same path is also exec-allowed. */
+    private String binaryPath() {
+        File lib = new File(getApplicationInfo().nativeLibraryDir, "lib" + LIB_NAME + ".so");
+        return lib.getAbsolutePath();
+    }
+
     /** On Android 11+ (API 30+) writing to /sdcard/wnacg needs the
-     *  MANAGE_EXTERNAL_STORAGE (All Files Access) permission, which the user
-     *  must grant via a system settings page. If we don't have it, jump there so
-     *  the user can tap "allow". If they decline, downloads fall back to the
-     *  app-private dir, so the app still works. On API < 30 we just use the
-     *  legacy WRITE_EXTERNAL_STORAGE path and stay out of the user's way. */
+     *  MANAGE_EXTERNAL_STORAGE (All Files Access) permission. We open the system
+     *  settings page and let the user grant it; if that specific page isn't
+     *  exposed by the ROM (some Android 16 builds), we fall back to the app's
+     *  general settings page. If even that fails, we just keep using the
+     *  app-private dir — downloads still work, just not on /sdcard. */
     private void requestStorageAccess() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return; // API 29 and below: not needed
         if (Environment.isExternalStorageManager()) return;       // already granted
+        append("需要「所有文件访问」权限才能下载到 /sdcard/wnacg\n正在打开授权页…\n");
         try {
-            append("需要「所有文件访问」权限才能下载到 /sdcard/wnacg\n正在打开授权页，请点「允许」…\n");
             Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
-        } catch (Exception e) {
-            append("无法自动打开授权页: " + e.getMessage() + "\n(可手动在系统设置里授予存储权限)\n");
-        }
-    }
-
-    /** Extract the native binary from assets into our private dir. */
-    private void ensureBinary() {
-        File bin = new File(getFilesDir(), ASSET);
-        if (bin.exists() && bin.length() > 0) {
-            // already extracted; just make sure perms are right
-            bin.setExecutable(true, false);
-            return;
-        }
-        try {
-            InputStream in = getAssets().open(ASSET);
-            FileOutputStream fos = new FileOutputStream(bin);
-            byte[] buf = new byte[8192];
-            int n;
-            while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
-            in.close();
-            fos.close();
-            // 0700: owner read/write/exec only
-            Runtime.getRuntime().exec("chmod 700 " + bin.getAbsolutePath()).waitFor();
-            Log.i(TAG, "extracted native binary -> " + bin.getAbsolutePath());
-        } catch (IOException e) {
-            Log.e(TAG, "failed to extract native binary", e);
-            append("提取原生二进制失败: " + e.getMessage() + "\n");
-        } catch (InterruptedException e) {
-            Log.e(TAG, "interrupted during chmod", e);
+        } catch (Exception e1) {
+            // ROM didn't expose that exact page — try the general app settings.
+            try {
+                Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            } catch (Exception e2) {
+                append("无法自动打开授权页: " + e1.getMessage() + "\n(可手动在系统设置里授予存储权限，或不授权改用 app 私有目录)\n");
+            }
         }
     }
 
@@ -123,7 +112,7 @@ public class MainActivity extends Activity {
     }
 
     private void execNative(String args) {
-        File bin = new File(getFilesDir(), ASSET);
+        String bin = binaryPath();
         // Auto-append a default download dir for `download <id>` so the user
         // never has to remember a path. Only when no extra arg is present.
         String[] tok = args.trim().split("\\s+");
@@ -131,7 +120,7 @@ public class MainActivity extends Activity {
             args = args + " " + defaultDownloadDir();
         }
         try {
-            String[] argv = (bin.getAbsolutePath() + " " + args).split(" ");
+            String[] argv = (bin + " " + args).split(" ");
             Process p = Runtime.getRuntime().exec(argv);
             // stream stdout + stderr concurrently so we never deadlock
             new ReaderThread(p.getInputStream()).start();

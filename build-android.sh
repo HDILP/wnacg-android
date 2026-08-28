@@ -1,7 +1,14 @@
 #!/usr/bin/env bash
 # build-android.sh — cross-compile the wnacg native binary for Android (API 9 / armeabi).
 #
-# Produces: android/app/src/main/assets/wnacg  (a single ARMv5TE executable).
+# Produces: android/app/src/main/jniLibs/armeabi/libwnacg.so
+#
+# Why a .so (not a bare executable in assets): Android API 29+ forbids exec()ing a
+# binary from the app's own data/files dir or from assets. A native library placed
+# under jniLibs/ is installed by the system into nativeLibraryDir, which is one of
+# the few paths where exec() is allowed — so the same layout works on 2.3 through
+# 16. The binary's main() is still a normal program entry point; we just name it
+# libwnacg.so and exec it directly.
 #
 # Why armeabi (ARMv5TE) and not armeabi-v7a: a v5 binary runs on every ARM
 # Android device ever shipped (v5, v7, v8 in 32-bit mode), so one binary covers
@@ -38,8 +45,8 @@ TC="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linu
 BS_DIR=thirdparty/bearssl-0.6
 BS_INC="$BS_DIR/inc"
 BS_LIB_ANDROID="$BS_DIR/build-android/libbearssl.a"
-OUT_DIR=android/app/src/main/assets
-OUT_BIN="$OUT_DIR/wnacg"
+OUT_DIR=android/app/src/main/jniLibs/armeabi
+OUT_LIB="$OUT_DIR/libwnacg.so"
 
 echo "[android] NDK=$NDK  link API=$LINK_API  (manifest minSdk=$MANIFEST_MIN_SDK)"
 
@@ -53,17 +60,24 @@ if [ ! -f "$BS_LIB_ANDROID" ]; then
              lib)
 fi
 
-# 2) Cross-compile the app (dynamic link vs bionic, runs on 2.3+).
+# 2) Cross-compile the app as a PIE EXECUTABLE (not -shared!) named libwnacg.so.
+#    MUST be a PIE executable (-pie -fPIE), NOT -shared: a shared object has no
+#    _start entry point and CANNOT be exec()'d — that would recreate the
+#    "Permission denied" crash seen when running from getFilesDir on API 29+.
+#    A PIE executable is an ELF ET_DYN with a real entry point, so exec() works,
+#    AND aapt2 still packs a file named lib*.so into lib/armeabi/ → the system
+#    installs it in nativeLibraryDir (the one exec-allowed path on modern Android).
 mkdir -p "$OUT_DIR"
-echo "[android] compiling wnacg (arm, armv5te) ..."
+echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
-    -O2 -std=c99 \
+    -O2 -std=c99 -fPIE \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c \
-    -o "$OUT_BIN" \
+    -o "$OUT_LIB" \
+    -pie -fPIE \
     -Wl,--start-group "$BS_LIB_ANDROID" -lc -lm -ldl -Wl,--end-group
 
-"$TC-strip" "$OUT_BIN" 2>/dev/null || true
-echo "[android] wrote $OUT_BIN ($(wc -c < "$OUT_BIN") bytes)"
-file "$OUT_BIN" 2>/dev/null || true
+"$TC-strip" "$OUT_LIB" 2>/dev/null || true
+echo "[android] wrote $OUT_LIB ($(wc -c < "$OUT_LIB") bytes)"
+file "$OUT_LIB" 2>/dev/null || true
