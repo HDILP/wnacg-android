@@ -15,6 +15,12 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.FileOutputStream;
 
+import android.content.pm.PackageManager;
+import android.net.Uri;
+import android.os.Build;
+import android.os.Environment;
+import android.provider.Settings;
+
 /**
  * Minimal shell for the native wnacg binary.
  *
@@ -44,6 +50,7 @@ public class MainActivity extends Activity {
         Button run = (Button) findViewById(R.id.run);
 
         ensureBinary();
+        requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
             public void onClick(android.view.View v) {
@@ -52,6 +59,25 @@ public class MainActivity extends Activity {
                 execNative(line);
             }
         });
+    }
+
+    /** On Android 11+ (API 30+) writing to /sdcard/wnacg needs the
+     *  MANAGE_EXTERNAL_STORAGE (All Files Access) permission, which the user
+     *  must grant via a system settings page. If we don't have it, jump there so
+     *  the user can tap "allow". If they decline, downloads fall back to the
+     *  app-private dir, so the app still works. On API < 30 we just use the
+     *  legacy WRITE_EXTERNAL_STORAGE path and stay out of the user's way. */
+    private void requestStorageAccess() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return; // API 29 and below: not needed
+        if (Environment.isExternalStorageManager()) return;       // already granted
+        try {
+            append("需要「所有文件访问」权限才能下载到 /sdcard/wnacg\n正在打开授权页，请点「允许」…\n");
+            Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+            intent.setData(Uri.parse("package:" + getPackageName()));
+            startActivity(intent);
+        } catch (Exception e) {
+            append("无法自动打开授权页: " + e.getMessage() + "\n(可手动在系统设置里授予存储权限)\n");
+        }
     }
 
     /** Extract the native binary from assets into our private dir. */
@@ -81,8 +107,28 @@ public class MainActivity extends Activity {
         }
     }
 
+    /** Pick where `download <id>` should save when the user gave no path.
+     *  Android 11+ with All-Files access: use /sdcard/wnacg (user wants this).
+     *  Otherwise: app-private external dir (no permission needed, always works). */
+    private String defaultDownloadDir() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            Environment.isExternalStorageManager()) {
+            File root = Environment.getExternalStorageDirectory();
+            return new File(root, "wnacg").getAbsolutePath();
+        }
+        File ext = getExternalFilesDir(null);
+        if (ext != null) return new File(ext, "wnacg").getAbsolutePath();
+        return new File(getFilesDir(), "wnacg").getAbsolutePath();
+    }
+
     private void execNative(String args) {
         File bin = new File(getFilesDir(), ASSET);
+        // Auto-append a default download dir for `download <id>` so the user
+        // never has to remember a path. Only when no extra arg is present.
+        String[] tok = args.trim().split("\\s+");
+        if (tok.length >= 1 && tok[0].equals("download") && tok.length == 2) {
+            args = args + " " + defaultDownloadDir();
+        }
         try {
             String[] argv = (bin.getAbsolutePath() + " " + args).split(" ");
             Process p = Runtime.getRuntime().exec(argv);

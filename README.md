@@ -1,6 +1,6 @@
 # wnacg-android
 
-在 **真·Android 2.3（API 9 / Gingerbread，2010 年设备）** 上搜索并下载 wnacg 漫画。
+在 **真·Android 2.3（API 9 / Gingerbread，2010 年设备）** 上搜索并下载 wnacg 漫画，并兼容到 **Android 14/15/16（API 34–36）**。
 
 移植自开源项目 `lanyeeee/wnacg-downloader`（Rust 后端 + Vue 前端）。原版在 Android 2.3 上
 根本跑不起来（没有现代 TLS、没有能用的 webview）。本仓库用 **纯 C + BearSSL 0.6**
@@ -24,6 +24,11 @@
   出于实用主义，二进制里把 x509 校验做成 no-op（只取叶子证书公钥完成握手），仅做
   加密传输、不做身份认证。这是下载工具的取舍，已在代码注释里标清，可加编译开关开启。
 - **armeabi（ARMv5TE）**：一个二进制覆盖所有 ARM 安卓机（v5/v7/v8 32 位都能跑）。
+- **兼容 Android 14/15/16**：原生二进制本身跟系统版本无关（自己搞定 TLS、不碰 Android
+  API），所以 2.3 和 16 上都能跑。Java 壳做了三件事让 APK 能在新系统安装和写盘：
+  `targetSdkVersion` 抬到 34（否则 14+ 直接拒绝安装）；Android 11+ 写 `/sdcard/wnacg`
+  需要「所有文件访问」权限，启动时自动拉起系统授权页让你点允许；若你不愿给，则自动回落到
+  app 私有目录（`getExternalFilesDir`/内部存储），下载照样能完成。`minSdk` 仍是 9，2.3 不受任何影响。
 
 ---
 
