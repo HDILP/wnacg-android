@@ -42,7 +42,7 @@ jobs:
           export ANDROID_HOME=$SDK
           export PATH=$SDK/cmdline-tools/latest/bin:$PATH
           yes | sdkmanager --licenses >/dev/null
-          sdkmanager "platforms;android-9" "build-tools;29.0.3"
+          sdkmanager "platforms;android-9" "platforms;android-34" "build-tools;29.0.3"
 
       - name: Compile host binary + run parser tests
         run: |

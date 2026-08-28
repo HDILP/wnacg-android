@@ -16,6 +16,11 @@ cd "$(dirname "$0")"
 BT_VER="${BT_VER:-29.0.3}"
 BT="$ANDROID_HOME/build-tools/$BT_VER"
 PLAT="$ANDROID_HOME/platforms/android-9"
+# javac must compile against a NEWER platform so API 30+ symbols used by the
+# shell (MANAGE_EXTERNAL_STORAGE, Build.VERSION_CODES.R, etc.) resolve. The APK
+# still targets minSdk 9 / targetSdk 34; runtime guards keep old devices safe.
+PLAT_JAVA="${ANDROID_HOME}/platforms/android-34"
+[ -d "$PLAT_JAVA" ] || PLAT_JAVA="$PLAT"
 
 APP_ROOT=android/app/src/main
 OUT=android/app/build/outputs
@@ -50,7 +55,7 @@ echo "[apk] javac + d8 ..."
 # NOTE: do NOT rm $WORK/gen here — aapt2 link (step 2) already generated R.java
 # into it, and javac needs it. Only clean the javac output + d8 zip.
 rm -rf "$WORK/obj" "$WORK/classes.zip"; mkdir -p "$WORK/obj" "$WORK/gen"
-javac -source 1.8 -target 1.8 -cp "$PLAT/android.jar" -d "$WORK/obj" \
+javac -source 1.8 -target 1.8 -cp "$PLAT_JAVA/android.jar" -d "$WORK/obj" \
     "$APP_ROOT/java/com/wnacg/android/MainActivity.java" \
     $(find "$WORK/gen" -name 'R.java')
 "$BT/d8" --output "$WORK/classes.zip" $(find "$WORK/obj" -name '*.class')
