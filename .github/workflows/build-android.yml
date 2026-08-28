@@ -59,15 +59,17 @@ jobs:
           # only ships python3, so provide a shim on PATH.
           mkdir -p /opt/pybin && ln -sf "$(command -v python3)" /opt/pybin/python
           export PATH=/opt/pybin:$PATH
-          # r16b's ar/gcc wrappers dlopen libncurses.so.5; modern runners only
-          # have libtinfo (ncurses 6). Provide a shim so the old binaries load.
-          if ! ldconfig -p 2>/dev/null | grep -q libncurses.so.5; then
-            TINFO=$(ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libtinfo\.so[^ ]*' | head -1)
-            if [ -n "$TINFO" ]; then
-              sudo ln -sf "$TINFO" /usr/lib/x86_64-linux-gnu/libncurses.so.5 2>/dev/null \
-                || ln -sf "$TINFO" "$HOME/libncurses.so.5"
-              echo "[ci] libncurses.so.5 shim -> $TINFO"
-            fi
+          # r16b's ar/gcc wrappers dlopen libncurses.so.5 / libtinfo.so.5; modern
+          # runners only have libtinfo (ncurses 6). Provide shims so the old
+          # binaries load. (sudo often unavailable, so fall back to $HOME and
+          # add it to LD_LIBRARY_PATH.)
+          TINFO=$(ldconfig -p 2>/dev/null | grep -oE '/[^ ]*libtinfo\.so[^ ]*' | head -1)
+          if [ -n "$TINFO" ]; then
+            for n in libncurses.so.5 libtinfo.so.5; do
+              sudo ln -sf "$TINFO" /usr/lib/x86_64-linux-gnu/$n 2>/dev/null \
+                || ln -sf "$TINFO" "$HOME/$n"
+            done
+            echo "[ci] ncurses shims -> $TINFO"
           fi
           ./build-android.sh
 
