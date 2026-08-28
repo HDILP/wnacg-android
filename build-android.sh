@@ -57,13 +57,13 @@ fi
 #    on every Android device — the binary is still a single self-contained file).
 mkdir -p "$OUT_DIR"
 echo "[android] compiling wnacg (arm, dynamic link vs bionic) ..."
-"$TC-gcc" --sysroot="$SYSROOT" $SYSINC -v \
+"$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 -D_GNU_SOURCE \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c \
-    -o "$OUT_BIN" "$BS_LIB_ANDROID" \
-    -lc -lm -ldl 2>&1 | grep -iE "LIBRARY_PATH|collect2|dynamic-linker|/lib/|crt|ld\b|libc|search" | head -20 || true
+    -o "$OUT_BIN" \
+    -Wl,--start-group "$BS_LIB_ANDROID" -lc -lm -ldl -Wl,--end-group
 
 "$TC-strip" "$OUT_BIN" 2>/dev/null || true
 echo "[android] wrote $OUT_BIN ($(wc -c < "$OUT_BIN") bytes)"
