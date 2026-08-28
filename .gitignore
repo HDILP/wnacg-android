@@ -1,7 +1,12 @@
 thirdparty/bearssl-0.6/build/
 thirdparty/bearssl-0.6/build-android/
 *.o
-wnacg
+
+# Host binary built by `make` (repo root) and the cross-compiled binary dropped
+# into assets by build-android.sh. Both are build outputs, NOT source.
+/wnacg
+android/app/src/main/assets/wnacg
+
 android/app/build/
 tests/parse_test
 
