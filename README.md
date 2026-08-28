@@ -9,6 +9,8 @@
 
 > 功能范围：搜索、按标签搜索、下载整本。单线程、纯命令行逻辑（壳里套一个输入框即可）。
 
+**CI 自动出包**：仓库的 GitHub Actions 会在每次 push / 手动触发时，自动安装 NDK r16b + SDK（platform 9 / build-tools 29），交叉编译原生二进制、打包并签名 APK，产物以 artifact `wnacg-android-apk` 形式提供下载。
+
 ---
 
 ## 为什么这样设计
