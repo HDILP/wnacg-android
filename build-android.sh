@@ -21,6 +21,9 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 NDK="${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must point at an NDK r16b install}"
+# The GitHub runner ships a newer NDK too; make-standalone-toolchain.sh reads
+# ANDROID_NDK_ROOT first, so pin it at our r16b to avoid the wrong NDK.
+export ANDROID_NDK_ROOT="$NDK"
 API=9
 DOMAIN='www.wn09.shop'
 

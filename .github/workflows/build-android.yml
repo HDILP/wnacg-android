@@ -16,8 +16,10 @@ jobs:
         id: ndk
         uses: actions/cache@v4
         with:
-          path: /opt/android-ndk-r16b
-          key: ndk-r16b-4479499
+          path: |
+            /opt/android-ndk-r16b
+            /opt/android-toolchain-api9
+          key: ndk-r16b-4479499-standalone
 
       - name: Install Android NDK r16b (API 9 compatible)
         if: steps.ndk.outputs.cache-hit != 'true'
