@@ -38,12 +38,17 @@ OUT_DIR=android/app/src/main/assets
 OUT_BIN="$OUT_DIR/wnacg"
 
 echo "[android] NDK=$NDK  API=$API"
-echo "[debug] SYSROOT/usr/lib contents:"; ls -la "$SYSROOT/usr/lib" 2>&1 | head -30 || true
-echo "[debug] platforms/android-9/arch-arm full tree:"; find "$NDK/platforms/android-9" 2>/dev/null | head -40 || true
-echo "[debug] any libc anywhere in NDK:"; find "$NDK" -name 'libc.so' 2>/dev/null | head || true
-echo "[debug] sysroot top:"; ls "$NDK/sysroot" 2>&1 | head || true
-echo "[debug] gcc -print-file-name=libgcc.a: $("$TC-gcc" -print-file-name=libgcc.a 2>&1)"
-echo "[debug] gcc -print-search-dirs: $("$TC-gcc" -print-search-dirs 2>&1 | head -3)"
+{
+  echo "== platforms/android-9 =="
+  find "$NDK/platforms/android-9" -maxdepth 4 2>/dev/null | head -60
+  echo "== any libc.so in NDK =="
+  find "$NDK" -name 'libc.so' 2>/dev/null | head
+  echo "== sysroot top =="
+  ls -la "$NDK/sysroot" 2>&1
+  echo "== sysroot/usr/lib =="
+  ls "$NDK/sysroot/usr/lib" 2>&1 | head
+} > /tmp/ndk_layout.txt 2>&1
+echo "[debug] layout saved"; cat /tmp/ndk_layout.txt | head -80
 
 # 1) Cross-compile BearSSL for ARM (static lib).
 if [ ! -f "$BS_LIB_ANDROID" ]; then
