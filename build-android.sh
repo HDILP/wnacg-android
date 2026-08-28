@@ -36,10 +36,12 @@ if [ ! -x "$STANDALONE/bin/arm-linux-androideabi-gcc" ]; then
     else
         PY=python3
     fi
-    "$NDK/build/tools/make-standalone-toolchain.sh" \
+    echo "[debug] python=$PY  NDK=$NDK"
+    bash -x "$NDK/build/tools/make-standalone-toolchain.sh" \
         --platform="android-$API" \
         --arch=arm \
-        --install-dir="$STANDALONE"
+        --install-dir="$STANDALONE" 2>&1 | tail -40 || true
+    echo "[debug] standalone created? $(ls -ld "$STANDALONE/bin" 2>&1)"
 fi
 
 TC="$STANDALONE/bin/arm-linux-androideabi"
