@@ -52,11 +52,13 @@ fi
 mkdir -p "$OUT_DIR"
 echo "[android] compiling wnacg (arm, static) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
+    -L"$SYSROOT/usr/lib" \
     -O2 -std=c99 -D_GNU_SOURCE -static \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c \
-    -o "$OUT_BIN" "$BS_LIB_ANDROID"
+    -o "$OUT_BIN" "$BS_LIB_ANDROID" \
+    -lc -lm -ldl
 
 "$TC-strip" "$OUT_BIN" 2>/dev/null || true
 echo "[android] wrote $OUT_BIN ($(wc -c < "$OUT_BIN") bytes)"
