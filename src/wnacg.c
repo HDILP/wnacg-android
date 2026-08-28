@@ -73,16 +73,41 @@ static void usage(const char *argv0) {
         "  %s detail <漫画ID>                 打印漫画详情(图数/标签)\n\n"
         "示例:\n"
         "  %s search 百合\n"
-        "  %s download 257351 /sdcard/wnacg\n",
-        argv0, argv0, argv0, argv0, argv0, argv0);
+        "  %s download 257351 /sdcard/wnacg\n"
+        "  说明: search/tag 支持多关键词, 用空格分隔 (如: %s search 百合 汉化);\n"
+        "  最后一个纯数字参数视为页码 (如: %s search 百合 汉化 2).\n",
+        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
 int cmd_search(int argc, char **argv, int is_tag) {
     if (argc < 3) { usage(argv[0]); return 1; }
-    const char *kw = argv[2];
+    /* Join all tokens after the command into one keyword, EXCEPT a trailing
+     * pure-number token which is taken as the page number. This lets users
+     * type `search 百合 汉化` (multi-word query) and `search 百合 汉化 2`
+     * (query + page). */
     int page = 1;
-    if (argc >= 4) page = atoi(argv[3]);
-    if (page < 1) page = 1;
+    int last = argc - 1;
+    if (last >= 2) {
+        /* is argv[last] a bare positive integer? */
+        const char *p = argv[last];
+        int isnum = 1;
+        for (; *p; p++) if (*p < '0' || *p > '9') { isnum = 0; break; }
+        if (isnum && *argv[last] != '\0' && atoi(argv[last]) >= 1) {
+            page = atoi(argv[last]);
+            last--;   // don't include it in the keyword
+        }
+    }
+    /* assemble keyword from argv[2..last] */
+    size_t kcap = 256;
+    for (int i = 2; i <= last; i++) kcap += strlen(argv[i]) + 1;
+    char *kw = malloc(kcap);
+    if (!kw) { fprintf(stderr, "内存不足\n"); return 1; }
+    kw[0] = '\0';
+    for (int i = 2; i <= last; i++) {
+        if (i > 2) strcat(kw, " ");
+        strcat(kw, argv[i]);
+    }
+    if (kw[0] == '\0') { free(kw); usage(argv[0]); return 1; }
 
     char url[1024];
     char qenc[2048];
