@@ -51,9 +51,8 @@ ls -la "$WORK" 2>&1 | head
     --manifest "$APP_ROOT/AndroidManifest.xml" \
     "$WORK/res.zip" \
     --java "$WORK/gen" \
-    --min-sdk-version 9 --target-sdk-version 34 2>"$WORK/aapt2link.err"
-echo "[apk] aapt2 link rc=$?"
-echo "[apk] aapt2 stderr:"; cat "$WORK/aapt2link.err"
+    --min-sdk-version 9 --target-sdk-version 34 2>"$WORK/aapt2link.err" || { echo "[apk] aapt2 link FAILED (rc=$?)"; cat "$WORK/aapt2link.err"; exit 1; }
+echo "[apk] aapt2 link ok"
 echo "[apk] app-unsigned.apk exists? $(ls -l "$WORK/app-unsigned.apk" 2>&1)"
 
 # 2b) Inject native libraries into lib/armeabi/ (aapt2 has no -j; we zip them in).

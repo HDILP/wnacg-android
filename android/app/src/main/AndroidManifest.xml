@@ -9,8 +9,9 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
     <!-- Android 11+ (API 30+) "All Files Access": required to write under
-         /sdcard/wnacg. User grants it via a system settings page we open. -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+         /sdcard/downloads. User grants it via a system settings page we open. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="35" />
 
     <uses-sdk
         android:minSdkVersion="9"
