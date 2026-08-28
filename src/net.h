@@ -3,6 +3,27 @@
 
 #include <stddef.h>
 
+#ifdef __ANDROID__
+/* A standalone bionic executable cannot resolve the 'stdout'/'stderr' FILE*
+ * pointers (they live in libc.so and are not exported for static linking), so
+ * any printf/fprintf reference fails to link with "undefined reference to
+ * 'stderr'/'stdout'". Route all formatted output through write() to the raw
+ * file descriptors instead. Desktop builds keep real stdio. */
+#include <unistd.h>
+#include <stdarg.h>
+static int wn_write_fd(int fd, const char *fmt, va_list ap) {
+    char buf[4096];
+    int n = vsnprintf(buf, sizeof(buf), fmt, ap);
+    if (n < 0) return -1;
+    if ((size_t)n > sizeof(buf) - 1) n = (int)sizeof(buf) - 1;
+    return (int)write(fd, buf, (size_t)n);
+}
+static int wn_out(const char *fmt, ...) { va_list ap; va_start(ap, fmt); int r = wn_write_fd(1, fmt, ap); va_end(ap); return r; }
+static int wn_err(const char *fmt, ...) { va_list ap; va_start(ap, fmt); int r = wn_write_fd(2, fmt, ap); va_end(ap); return r; }
+#define printf(...)        wn_out(__VA_ARGS__)
+#define fprintf(s, ...)    wn_err(__VA_ARGS__)
+#endif
+
 /* Parsed URL. All pointers borrow from a single malloc'd buffer held by
  * the caller; we keep a copy here for clarity. */
 typedef struct {

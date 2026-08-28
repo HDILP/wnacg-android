@@ -11,13 +11,6 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-#ifdef __ANDROID__
-/* A standalone bionic executable cannot resolve 'stderr' from the shared libc,
-   so link fails with "undefined reference to 'stderr'". Route diagnostics to
-   stdout, which the Java wrapper reads into the on-screen log anyway. */
-#define stderr stdout
-#endif
-
 /* ---------- URL parsing ---------- */
 
 static char *xstrdup(const char *s) {
