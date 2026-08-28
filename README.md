@@ -26,9 +26,10 @@
 - **armeabi（ARMv5TE）**：一个二进制覆盖所有 ARM 安卓机（v5/v7/v8 32 位都能跑）。
 - **兼容 Android 14/15/16**：原生二进制本身跟系统版本无关（自己搞定 TLS、不碰 Android
   API），所以 2.3 和 16 上都能跑。Java 壳做了三件事让 APK 能在新系统安装和写盘：
-  `targetSdkVersion` 抬到 34（否则 14+ 直接拒绝安装）；Android 11+ 写 `/sdcard/wnacg`
-  需要「所有文件访问」权限，启动时自动拉起系统授权页让你点允许；若你不愿给，则自动回落到
-  app 私有目录（`getExternalFilesDir`/内部存储），下载照样能完成。`minSdk` 仍是 9，2.3 不受任何影响。
+  `targetSdkVersion` 抬到 34（否则 14+ 直接拒绝安装）；下载默认固定写到
+  `/sdcard/downloads/<漫画ID>`（Android 11+ 写这里需要「所有文件访问」权限，启动时自动
+  拉起系统授权页让你点允许）；若你不愿给，则自动回落到 app 私有目录，下载照样能完成。
+  `minSdk` 仍是 9，2.3 不受任何影响。
 
 ---
 
@@ -45,7 +46,8 @@ wnacg detail   <漫画ID>                 打印漫画详情（图数/标签）
 
 ```
 wnacg search 百合
-wnacg download 257351 /sdcard/wnacg
+wnacg download 257351          # 自动存到 /sdcard/downloads/257351（已授权时）
+wnacg download 257351 /sdcard/downloads   # 等价写法
 ```
 
 > 默认域名：`www.wn09.shop`（在 `src/wnacg.c`、`Makefile`、说明注释里各一处；改域名时三处一起改）。
@@ -94,9 +96,11 @@ build-tools 命令行，用一次性 debug keystore 签名，产出的 apk 可�
 1. 拿到 `wnacg.apk`（自己编，或去 Actions 下载 artifact）。
 2. 设备开「未知来源」安装：`设置 → 应用程序 → 未知来源`。
 3. `adb install wnacg.apk`（或拷到 sdcard 用文件管理器点装）。
-4. 打开 app，输入框里直接打命令，例如 `download 257351 /sdcard/wnacg`，
-   点「运行」。图片会按 `<保存目录>/<漫画ID>/0001.webp ...` 存盘。
-5. 也可以 `adb shell` 进到 `/data/data/com.wnacg.android/files/` 直接跑 `./wnacg`。
+4. 打开 app，输入框里直接打 `download 257351`，点「运行」。授权「所有文件访问」后，
+   图片会自动存到 `/sdcard/downloads/257351/0001.webp ...`（不写路径即走固定目录；
+   也可手动指定 `download 257351 /sdcard/downloads`）。
+5. 也可以 `adb shell` 进到 app 的 native 目录直接跑 `./libwnacg.so`（路径由
+   `getApplicationInfo().nativeLibraryDir` 给出，2.3/16 通用）。
 
 > 存储权限：manifest 已声明 `INTERNET` 和 `WRITE_EXTERNAL_STORAGE`（API 9 是安装期权限，
 > 不需运行时弹窗）。若下载到 `/sdcard` 失败，先确认存储卡可写。

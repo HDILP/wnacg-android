@@ -100,17 +100,22 @@ public class MainActivity extends Activity {
     }
 
     /** Pick where `download <id>` should save when the user gave no path.
-     *  Android 11+ with All-Files access: use /sdcard/wnacg (user wants this).
-     *  Otherwise: app-private external dir (no permission needed, always works). */
+     *  The native binary itself appends /<id> to whatever base dir we pass, so we
+     *  just return the BASE dir here.
+     *  Fixed path /sdcard/downloads on every Android version (API 9 included:
+     *  WRITE_EXTERNAL_STORAGE is install-time there, no prompt). On Android 11+
+     *  this needs the All-Files access grant; if that isn't granted we fall back
+     *  to the app-private dir so the download still succeeds. */
+    private static final String FIXED_BASE_DIR = "/sdcard/downloads";
     private String defaultDownloadDir() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-            Environment.isExternalStorageManager()) {
-            File root = Environment.getExternalStorageDirectory();
-            return new File(root, "wnacg").getAbsolutePath();
+            !Environment.isExternalStorageManager()) {
+            // Android 11+ without the All-Files grant: can't write /sdcard/downloads.
+            File ext = getExternalFilesDir(null);
+            if (ext != null) return ext.getAbsolutePath();
+            return getFilesDir().getAbsolutePath();
         }
-        File ext = getExternalFilesDir(null);
-        if (ext != null) return new File(ext, "wnacg").getAbsolutePath();
-        return new File(getFilesDir(), "wnacg").getAbsolutePath();
+        return FIXED_BASE_DIR;
     }
 
     private void execNative(String args) {
