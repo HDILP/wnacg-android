@@ -42,16 +42,25 @@ echo "[apk] aapt2 compile resources ..."
 #    combined with --min-sdk-version 9 makes newer aapt2 silently print help and
 #    emit NO apk.
 echo "[apk] aapt2 link ..."
+echo "[apk] WORK=$WORK ; pwd=$(pwd)"
+ls -la "$WORK" 2>&1 | head
 "$BT/aapt2" link --no-auto-version \
     -o "$WORK/app-unsigned.apk" \
     -I "$PLAT/android.jar" \
     --manifest "$APP_ROOT/AndroidManifest.xml" \
     "$WORK/res.zip" \
     --java "$WORK/gen" \
-    --min-sdk-version 9 --target-sdk-version 34
+    --min-sdk-version 9 --target-sdk-version 34 2>"$WORK/aapt2link.err"
+echo "[apk] aapt2 link rc=$?"
+echo "[apk] aapt2 stderr:"; cat "$WORK/aapt2link.err"
+echo "[apk] app-unsigned.apk exists? $(ls -l "$WORK/app-unsigned.apk" 2>&1)"
 
 # 2b) Inject native libraries into lib/armeabi/ (aapt2 has no -j; we zip them in).
 if [ -d "$APP_ROOT/jniLibs" ]; then
+    if [ ! -f "$WORK/app-unsigned.apk" ]; then
+        echo "[apk] ERROR: app-unsigned.apk missing, cannot inject native libs"
+        exit 1
+    fi
     echo "[apk] inject native libs (lib/armeabi/libwnacg.so) ..."
     LIBPACK="$WORK/libpack"; rm -rf "$LIBPACK"; mkdir -p "$LIBPACK/lib"
     cp -r "$APP_ROOT/jniLibs"/* "$LIBPACK/lib/"
