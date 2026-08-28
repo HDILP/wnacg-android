@@ -36,7 +36,7 @@ if [ ! -f "$BS_LIB_ANDROID" ]; then
         make BUILD=build-android \
              CC="$TC-gcc --sysroot=$SYSROOT" \
              AR="$TC-ar" RANLIB="$TC-ranlib" \
-             libbearssl.a)
+             lib)
 fi
 
 # 2) Cross-compile the app (static against the NDK libc, no shared deps).
