@@ -20,8 +20,8 @@ typedef struct {
 } search_result;
 
 /* Parse a search result HTML page (wnacg search/index.php output).
- * is_tag: 1 if the page came from a tag URL (albums-index-page-N-tag-X.html),
- *         0 for keyword search. Affects total-page detection.
+ * is_tag: 1 for tag searches (same f=tag endpoint, same layout; only the
+ *         total-page detection differs), 0 for keyword search.
  * Returns 0 on success. Caller frees with free_search_result(). */
 int parse_search(const char *html, int is_tag, search_result *out);
 void free_search_result(search_result *s);

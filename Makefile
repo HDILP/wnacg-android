@@ -27,8 +27,11 @@ $(BS_LIB):
 wnacg: $(SRC) $(HDR) $(BS_LIB)
 	$(CC) $(CFLAGS) -I$(BS_INC) $(SRC) -o $@ $(LDFLAGS)
 
+# Parser unit tests against sample HTML (no network). The authoritative test
+# entry is build.sh test (builds ./wnacg then compiles+runs tests/parse_test.c);
+# this target is kept for convenience and uses the same driver.
 test: wnacg
-	./tests/run_tests.sh
+	./build.sh test
 
 clean:
 	rm -f wnacg

@@ -17,20 +17,28 @@
 
 - **BearSSL 静态链接**：自带的 TLS 栈在 API 9 上早就过期，且 2.3 的 `HttpsURLConnection`
   不支持现代 cipher，握手必失败。BearSSL 体积小数百 KB、可静态链接，自己搞定握手。
-- **不碰 JNI**：原生逻辑全在 C 里，Java 只负责「解压 assets 里的二进制 → chmod 700 →
-  Runtime.exec 接收参数 → 把 stdout/stderr 回显到 TextView」。2.3 的 NDK/JNI 坑太多，
-  能不碰就不碰。
+- **不碰 JNI**：原生逻辑全在 C 里，Java 只负责「找到 `nativeLibraryDir` 里的 `libwnacg.so`
+  （一个 PIE 可执行文件，伪装成 .so 以便系统把它装到唯一允许 exec 的目录）→ Runtime.exec
+  接收参数 → 把 stdout/stderr 回显到 TextView」。2.3 的 NDK/JNI 坑太多，能不碰就不碰。
+- **为什么打成 native library 而不是 assets 里的可执行文件**：Android 10+（API 29+）禁止
+  从 app 自己的 `data/files` 目录或 assets 里 `exec()` 二进制（SELinux/W^X 直接拒绝）。
+  把二进制放进 `jniLibs/armeabi/libwnacg.so`，安装时系统会把它解到 `nativeLibraryDir`，
+  这是现代 Android 上为数不多允许 exec 的路径；Gingerbread 上同一布局同样可 exec，
+  于是一份产物覆盖 2.3 到 16。注意它必须用 `-pie -fPIE` 编成**可执行文件**（有 `_start`
+  入口），`-shared` 共享库没有入口、exec 不了。
 - **证书校验默认关闭**：站点的 CA 链不在 2010 年的系统信任库里，且漫画站 TLS 配置多变。
   出于实用主义，二进制里把 x509 校验做成 no-op（只取叶子证书公钥完成握手），仅做
   加密传输、不做身份认证。这是下载工具的取舍，已在代码注释里标清，可加编译开关开启。
 - **armeabi（ARMv5TE）**：一个二进制覆盖所有 ARM 安卓机（v5/v7/v8 32 位都能跑）。
 - **兼容 Android 14/15/16**：原生二进制本身跟系统版本无关（自己搞定 TLS、不碰 Android
-  API），所以 2.3 和 16 上都能跑。Java 壳做了三件事让 APK 能在新系统安装和写盘：
+  API），所以 2.3 和 16 上都能跑。Java 壳做了几件事让 APK 能在新系统安装和写盘：
   `targetSdkVersion` 抬到 34（否则 14+ 直接拒绝安装）；下载默认固定写到
-  `/sdcard/downloads/<漫画ID>`（Android 11+ 写这里需要「所有文件访问」权限，但**很多 ROM
-  没有给第三方应用暴露这个权限的系统入口**，此时 app 不会弹窗、而是在输出区提示你去
-  `设置→应用→wnacg→所有文件访问权限` 手动开启）；若开不了或不想开，则自动回落到 app 私有
-  目录（`Android/data/com.wnacg.android/files/<ID>`，文件管理器可见），下载照样能完成。
+  `/sdcard/downloads/<漫画ID>`。Android 11+ 写这里需要「所有文件访问」特殊权限——它
+  不在应用属性页的「权限管理」列表里（那个列表只列普通运行时权限，所以显示"未要求任何
+  权限"是正常的），而是在应用信息页下方单独的「所有文件访问权限」开关。app 启动/下载时
+  会用 `ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION` 直接拉系统授权页；若 ROM 没暴露该
+  页面则回退到通用应用属性页。不开这个权限时自动回落到 app 私有目录
+  （`Android/data/com.wnacg.android/files/<ID>`，文件管理器可见），下载照样能完成。
   `minSdk` 仍是 9，2.3 不受任何影响。
 
 ---
@@ -38,8 +46,8 @@
 ## 命令行用法（原生二进制）
 
 ```
-wnacg search   <关键词> [页码]          搜索漫画（全字段模糊，f=_all）
-wnacg tag      <标签>   [页码]          按标签搜索（f=tag）
+wnacg search   <关键词...> [页码]         搜索漫画（全字段模糊，f=_all；多词用空格分隔）
+wnacg tag      <标签...>   [页码]         按标签搜索（f=tag；同样支持多词）
 wnacg download <漫画ID> [保存目录]      下载整本到目录（单线程）
 wnacg detail   <漫画ID>                 打印漫画详情（图数/标签）
 ```
@@ -48,6 +56,8 @@ wnacg detail   <漫画ID>                 打印漫画详情（图数/标签）
 
 ```
 wnacg search 百合
+wnacg search 百合 汉化          # 多关键词：空格分隔，全部并入查询
+wnacg search 百合 汉化 2        # 最后一个纯数字参数视为页码
 wnacg download 257351          # 自动存到 /sdcard/downloads/257351（已授权时）
 wnacg download 257351 /sdcard/downloads   # 等价写法
 ```
@@ -84,7 +94,7 @@ wnacg download 257351 /sdcard/downloads   # 等价写法
 export ANDROID_NDK_HOME=/path/to/android-ndk-r16b
 export ANDROID_HOME=/path/to/android-sdk
 
-./build-android.sh        # 交叉编译 -> android/app/src/main/assets/wnacg
+./build-android.sh        # 交叉编译 -> android/app/src/main/jniLibs/armeabi/libwnacg.so
 ./packapk.sh              # aapt2 + d8 + apksigner -> android/app/build/outputs/wnacg.apk
 ```
 
@@ -104,8 +114,10 @@ build-tools 命令行，用一次性 debug keystore 签名，产出的 apk 可�
 5. 也可以 `adb shell` 进到 app 的 native 目录直接跑 `./libwnacg.so`（路径由
    `getApplicationInfo().nativeLibraryDir` 给出，2.3/16 通用）。
 
-> 存储权限：manifest 已声明 `INTERNET` 和 `WRITE_EXTERNAL_STORAGE`（API 9 是安装期权限，
-> 不需运行时弹窗）。若下载到 `/sdcard` 失败，先确认存储卡可写。
+> 存储权限：manifest 已声明 `INTERNET`、`WRITE_EXTERNAL_STORAGE`（API 9 是安装期权限，
+> 不需运行时弹窗）、`MANAGE_EXTERNAL_STORAGE`（maxSdk 35；Android 16/API 36 会拒收这个
+> 权限，但 scoped storage 的媒体权限已够用，且仍可回退 app 私有目录）。若下载到
+> `/sdcard` 失败，先确认「所有文件访问」开关已开。
 
 ---
 
@@ -119,7 +131,7 @@ src/
   tls.c     BearSSL 客户端封装（手动驱动引擎，关闭证书校验）
 thirdparty/bearssl-0.6/    BearSSL 0.6（静态库，主机+安卓各编一份）
 tests/                  样例 HTML 解析单测（parse_test.c + 样例）
-android/app/src/main/   Java 壳（minSdk=9）+ manifest + resources + assets/
+android/app/src/main/   Java 壳（minSdk=9）+ manifest + resources + jniLibs/armeabi/libwnacg.so
 build.sh / build-android.sh / packapk.sh   编译与打包脚本
 .github/workflows/      CI：ubuntu 上编 NDK/SDK + 出 apk artifact
 ```
