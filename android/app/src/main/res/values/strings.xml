@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">wnacg</string>
+    <string name="hint_command">search 百合   |   download 380585 /sdcard/wnacg</string>
+    <string name="run">运行</string>
+    <string name="output">输出</string>
+</resources>

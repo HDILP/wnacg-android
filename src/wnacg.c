@@ -1,0 +1,219 @@
+#include "net.h"
+#include "tls.h"
+#include "html.h"
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#ifndef DEFAULT_API_DOMAIN
+#define DEFAULT_API_DOMAIN "www.wn09.shop"
+#endif
+
+/* Percent-encode a string for use in a URL query (RFC 3986 unsafe set). */
+static void url_encode(const char *src, char *dst, size_t dstcap) {
+    static const char hex[] = "0123456789ABCDEF";
+    size_t j = 0;
+    for (size_t i = 0; src[i] && j + 1 < dstcap; i++) {
+        unsigned char c = (unsigned char)src[i];
+        if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+            c == '.' || c == '~') {
+            dst[j++] = (char)c;
+        } else {
+            if (j + 3 >= dstcap) break;
+            dst[j++] = '%';
+            dst[j++] = hex[(c >> 4) & 0xF];
+            dst[j++] = hex[c & 0xF];
+        }
+    }
+    dst[j] = '\0';
+}
+
+/* Download a single image URL to the given path. Returns 0 on success. */
+static int download_image(const char *url, const char *out_path) {
+    http_response r;
+    if (http_get(url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+        fprintf(stderr, "  [!] network error: %s\n", url);
+        return -1;
+    }
+    if (r.status != 200 || r.body_len == 0) {
+        fprintf(stderr, "  [!] HTTP %d empty: %s\n", r.status, url);
+        free_http_response(&r);
+        return -1;
+    }
+    FILE *f = fopen(out_path, "wb");
+    if (!f) {
+        fprintf(stderr, "  [!] cannot open %s\n", out_path);
+        free_http_response(&r);
+        return -1;
+    }
+    fwrite(r.body, 1, r.body_len, f);
+    fclose(f);
+    free_http_response(&r);
+    return 0;
+}
+
+static int ensure_dir(const char *path) {
+    struct stat st;
+    if (stat(path, &st) == 0) return 0;
+    return mkdir(path, 0755);
+}
+
+static void usage(const char *argv0) {
+    fprintf(stderr,
+        "wnacg-android — 移植自 lanyeeee/wnacg-downloader 的安卓2.3下载器\n\n"
+        "用法:\n"
+        "  %s search <关键词> [页码]           搜索漫画\n"
+        "  %s tag <标签> [页码]               按标签搜索\n"
+        "  %s download <漫画ID> [保存目录]    下载整本漫画到目录(单线程)\n"
+        "  %s detail <漫画ID>                 打印漫画详情(图数/标签)\n\n"
+        "示例:\n"
+        "  %s search 百合\n"
+        "  %s download 257351 /sdcard/wnacg\n",
+        argv0, argv0, argv0, argv0, argv0, argv0);
+}
+
+int cmd_search(int argc, char **argv, int is_tag) {
+    if (argc < 3) { usage(argv[0]); return 1; }
+    const char *kw = argv[2];
+    int page = 1;
+    if (argc >= 4) page = atoi(argv[3]);
+    if (page < 1) page = 1;
+
+    char url[1024];
+    char qenc[2048];
+    url_encode(kw, qenc, sizeof(qenc));
+    if (is_tag) {
+        snprintf(url, sizeof(url),
+                 "https://" DEFAULT_API_DOMAIN "/albums-index-page-%d-tag-%s.html",
+                 page, qenc);
+    } else {
+        snprintf(url, sizeof(url),
+                 "https://" DEFAULT_API_DOMAIN "/search/index.php?q=%s&syn=yes&f=_all&s=create_time_DESC&p=%d",
+                 qenc, page);
+    }
+
+    http_response r;
+    if (http_get(url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+        fprintf(stderr, "搜索请求失败(网络/TLS错误)\n");
+        return 1;
+    }
+    if (r.status != 200) {
+        fprintf(stderr, "搜索返回 HTTP %d\n", r.status);
+        free_http_response(&r);
+        return 1;
+    }
+
+    search_result s;
+    if (parse_search(r.body, is_tag, &s) != 0) {
+        fprintf(stderr, "解析搜索结果失败\n");
+        free_http_response(&r);
+        return 1;
+    }
+    free_http_response(&r);
+
+    printf("=== 搜索 \"%s\" 第 %ld/%ld 页, 共 %d 条 ===\n", kw, s.current_page,
+           s.total_page, s.count);
+    for (int i = 0; i < s.count; i++) {
+        printf("[%ld] %s\n      图: %s\n", s.items[i].id,
+               s.items[i].title ? s.items[i].title : "(无标题)",
+               s.items[i].additional ? s.items[i].additional : "");
+    }
+    free_search_result(&s);
+    return 0;
+}
+
+int cmd_detail(int argc, char **argv) {
+    if (argc < 3) { usage(argv[0]); return 1; }
+    long id = atol(argv[2]);
+    char url[256];
+    snprintf(url, sizeof(url),
+             "https://" DEFAULT_API_DOMAIN "/photos-gallery-aid-%ld.html", id);
+
+    http_response r;
+    if (http_get(url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+        fprintf(stderr, "详情请求失败\n");
+        return 1;
+    }
+    char **urls = NULL;
+    int n = 0;
+    if (r.status == 200) {
+        parse_imglist(r.body, &urls, &n);
+    }
+    printf("漫画ID %ld: 图片 %d 张\n", id, n);
+    free_http_response(&r);
+    for (int i = 0; i < n; i++) free(urls[i]);
+    free(urls);
+    return 0;
+}
+
+int cmd_download(int argc, char **argv) {
+    if (argc < 3) { usage(argv[0]); return 1; }
+    long id = atol(argv[2]);
+    const char *base_dir = (argc >= 4) ? argv[3] : ".";
+    ensure_dir(base_dir);
+
+    char gallery_url[256];
+    snprintf(gallery_url, sizeof(gallery_url),
+             "https://" DEFAULT_API_DOMAIN "/photos-gallery-aid-%ld.html", id);
+
+    http_response r;
+    if (http_get(gallery_url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+        fprintf(stderr, "获取漫画页失败\n");
+        return 1;
+    }
+    if (r.status != 200) {
+        fprintf(stderr, "漫画页 HTTP %d (可能ID不存在或被删)\n", r.status);
+        free_http_response(&r);
+        return 1;
+    }
+
+    char **urls = NULL;
+    int n = 0;
+    parse_imglist(r.body, &urls, &n);
+    free_http_response(&r);
+
+    if (n == 0) {
+        fprintf(stderr, "未解析到任何图片URL\n");
+        return 1;
+    }
+
+    /* directory name = comic id */
+    char dir[1024];
+    snprintf(dir, sizeof(dir), "%s/%ld", base_dir, id);
+    ensure_dir(dir);
+
+    printf("开始下载 漫画 %ld: %d 张到 %s\n", id, n, dir);
+    int ok = 0, fail = 0;
+    for (int i = 0; i < n; i++) {
+        char num[16];
+        snprintf(num, sizeof(num), "%04d", i + 1);
+        /* keep original extension if present */
+        const char *dot = strrchr(urls[i], '.');
+        const char *ext = (dot && strlen(dot) <= 6) ? dot : "";
+        char outp[1100];
+        snprintf(outp, sizeof(outp), "%s/%s%s", dir, num, ext);
+        printf("  (%d/%d) %s\n", i + 1, n, num);
+        if (download_image(urls[i], outp) == 0) ok++;
+        else fail++;
+    }
+    printf("完成: 成功 %d, 失败 %d\n", ok, fail);
+    for (int i = 0; i < n; i++) free(urls[i]);
+    free(urls);
+    return fail ? 1 : 0;
+}
+
+int main(int argc, char **argv) {
+    if (argc < 2) { usage(argv[0]); return 1; }
+    const char *cmd = argv[1];
+    if (strcmp(cmd, "search") == 0)   return cmd_search(argc, argv, 0);
+    if (strcmp(cmd, "tag") == 0)      return cmd_search(argc, argv, 1);
+    if (strcmp(cmd, "download") == 0)  return cmd_download(argc, argv);
+    if (strcmp(cmd, "detail") == 0)   return cmd_detail(argc, argv);
+    usage(argv[0]);
+    return 1;
+}

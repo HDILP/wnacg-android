@@ -1,0 +1,65 @@
+name: build-android
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache NDK r16b
+        id: ndk
+        uses: actions/cache@v4
+        with:
+          path: /opt/android-ndk-r16b
+          key: ndk-r16b-4479499
+
+      - name: Install Android NDK r16b (API 9 compatible)
+        if: steps.ndk.outputs.cache-hit != 'true'
+        run: |
+          set -eux
+          curl -fSL -o /tmp/ndk.zip \
+            https://dl.google.com/android/repository/android-ndk-r16b-linux-x86_64.zip
+          unzip -q /tmp/ndk.zip -d /opt
+          mv /opt/android-ndk-r16b /opt/android-ndk-r16b
+
+      - name: Install Android SDK (cmdline-tools) + platform 9 + build-tools
+        run: |
+          set -eux
+          SDK=/opt/android-sdk
+          mkdir -p $SDK/cmdline-tools
+          curl -fSL -o /tmp/cmdline.zip \
+            https://dl.google.com/android/repository/commandlinetools-linux-9477386_latest.zip
+          unzip -q /tmp/cmdline.zip -d $SDK/cmdline-tools
+          mv $SDK/cmdline-tools/cmdline-tools $SDK/cmdline-tools/latest
+          export ANDROID_HOME=$SDK
+          export PATH=$SDK/cmdline-tools/latest/bin:$PATH
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platforms;android-9" "build-tools;29.0.3"
+
+      - name: Compile host binary + run parser tests
+        run: |
+          set -eux
+          gcc --version
+          ./build.sh test
+
+      - name: Cross-compile native binary for Android (API 9, armeabi)
+        env:
+          ANDROID_NDK_HOME: /opt/android-ndk-r16b
+        run: ./build-android.sh
+
+      - name: Package APK (aapt2 + d8 + apksigner)
+        env:
+          ANDROID_HOME: /opt/android-sdk
+        run: ./packapk.sh
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: wnacg-android-apk
+          path: android/app/build/outputs/wnacg.apk
