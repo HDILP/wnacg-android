@@ -8,7 +8,13 @@
  * pointers (they live in libc.so and are not exported for static linking), so
  * any printf/fprintf reference fails to link with "undefined reference to
  * 'stderr'/'stdout'". Route all formatted output through write() to the raw
- * file descriptors instead. Desktop builds keep real stdio. */
+ * file descriptors instead. Desktop builds keep real stdio.
+ *
+ * IMPORTANT: vsnprintf and the stdio prototypes must be visible BEFORE we
+ * #define printf/fprintf, otherwise the macros corrupt <stdio.h>'s own
+ * declarations (seen as "format string argument is not a string type"). So we
+ * include <stdio.h> here, ahead of the macro definitions. */
+#include <stdio.h>
 #include <unistd.h>
 #include <stdarg.h>
 static int wn_write_fd(int fd, const char *fmt, va_list ap) {
