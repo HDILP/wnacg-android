@@ -62,7 +62,8 @@ echo "[android] compiling wnacg (arm, static) ..."
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c \
-    -o "$OUT_BIN" "$BS_LIB_ANDROID"
+    -o "$OUT_BIN" "$BS_LIB_ANDROID" \
+    -lc -lm -ldl
 
 "$TC-strip" "$OUT_BIN" 2>/dev/null || true
 echo "[android] wrote $OUT_BIN ($(wc -c < "$OUT_BIN") bytes)"
