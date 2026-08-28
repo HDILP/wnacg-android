@@ -38,6 +38,7 @@ OUT_DIR=android/app/src/main/assets
 OUT_BIN="$OUT_DIR/wnacg"
 
 echo "[android] NDK=$NDK  API=$API"
+set +e
 {
   echo "== platforms/android-9 =="
   find "$NDK/platforms/android-9" -maxdepth 4 2>/dev/null | head -60
@@ -48,7 +49,8 @@ echo "[android] NDK=$NDK  API=$API"
   echo "== sysroot/usr/lib =="
   ls "$NDK/sysroot/usr/lib" 2>&1 | head
 } > /tmp/ndk_layout.txt 2>&1
-echo "[debug] layout saved"; cat /tmp/ndk_layout.txt | head -80
+echo "[debug] layout saved"; sed 's/^/  /' /tmp/ndk_layout.txt | head -80
+set -e
 
 # 1) Cross-compile BearSSL for ARM (static lib).
 if [ ! -f "$BS_LIB_ANDROID" ]; then
