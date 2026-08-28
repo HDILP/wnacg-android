@@ -27,6 +27,8 @@ DOMAIN='www.wn09.shop'
 
 SYSROOT="$NDK/platforms/android-$API/arch-arm"
 UNIFIED_INC="$NDK/sysroot/usr/include"
+UNIFIED_INC_ARCH="$NDK/sysroot/usr/include/arm-linux-androideabi"
+SYSINC="-isystem $UNIFIED_INC -isystem $UNIFIED_INC_ARCH"
 TC="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linux-androideabi"
 BS_DIR=thirdparty/bearssl-0.6
 BS_INC="$BS_DIR/inc"
@@ -41,7 +43,7 @@ if [ ! -f "$BS_LIB_ANDROID" ]; then
     echo "[android] compiling BearSSL (arm) ..."
     (cd "$BS_DIR" && \
         make BUILD=build-android \
-             CC="$TC-gcc --sysroot=$SYSROOT -isystem $UNIFIED_INC" \
+             CC="$TC-gcc --sysroot=$SYSROOT $SYSINC" \
              AR="$TC-ar" RANLIB="$TC-ranlib" \
              lib)
 fi
@@ -49,7 +51,7 @@ fi
 # 2) Cross-compile the app (static against the NDK libc, no shared deps).
 mkdir -p "$OUT_DIR"
 echo "[android] compiling wnacg (arm, static) ..."
-"$TC-gcc" --sysroot="$SYSROOT" -isystem "$UNIFIED_INC" \
+"$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 -D_GNU_SOURCE -static \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
