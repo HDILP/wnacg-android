@@ -9,6 +9,12 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#ifdef __ANDROID__
+/* Standalone bionic exec can't resolve 'stderr' from shared libc; route
+   diagnostics to stdout (read by the Java wrapper into the on-screen log). */
+#define stderr stdout
+#endif
+
 #ifndef DEFAULT_API_DOMAIN
 #define DEFAULT_API_DOMAIN "www.wn09.shop"
 #endif
