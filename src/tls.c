@@ -99,8 +99,13 @@ typedef struct {
     int last_err;
 } tls_ctx;
 
+/* tls_connect() frees its context on failure, so the error code must survive
+ * the free. Keep the most recent handshake error in a static as well. */
+static int g_last_err = 0;
+
 int tls_last_error(void *ctx) {
-    return ctx ? ((tls_ctx *)ctx)->last_err : 0;
+    if (ctx) return ((tls_ctx *)ctx)->last_err;
+    return g_last_err;
 }
 
 void *tls_connect(int fd, const char *hostname) {
@@ -134,6 +139,7 @@ void *tls_connect(int fd, const char *hostname) {
     /* perform handshake */
     if (br_sslio_flush(&c->io) != 0) {
         c->last_err = (int)br_ssl_engine_last_error((br_ssl_engine_context *)&c->sc);
+        g_last_err = c->last_err;
         free(c);
         return NULL;
     }

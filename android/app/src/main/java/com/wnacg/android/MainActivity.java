@@ -88,6 +88,7 @@ public class MainActivity extends Activity {
         if (Environment.isExternalStorageManager()) return;       // already granted
         append("正在打开「所有文件访问」授权页…\n");
         append("(该开关在应用信息页里, 不在「权限管理」列表; 若打开的是应用属性页, 请往下滑找「所有文件访问权限」并开启)\n");
+        append("(ColorOS/OPPO 等系统可能不显示该开关: 去 设置→搜索「所有文件访问」→ 点进 wnacg 开启)\n");
         try {
             Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
             intent.setData(Uri.parse("package:" + getPackageName()));
@@ -123,37 +124,46 @@ public class MainActivity extends Activity {
         return FIXED_BASE_DIR;
     }
 
-    private void execNative(String args) {
-        String bin = binaryPath();
-        // Auto-append a default download dir for `download <id>` so the user
-        // never has to remember a path. Only when no extra arg is present.
-        String[] tok = args.trim().split("\\s+");
-        if (tok.length >= 1 && tok[0].equals("download") && tok.length == 2) {
-            // On Android 11+, if All-Files access isn't granted yet, open the
-            // system grant page (the real "所有文件访问" toggle) BEFORE running,
-            // so the user can enable it; this run still falls back to the
-            // app-private dir, the next run lands in /sdcard/downloads.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-                !Environment.isExternalStorageManager()) {
-                append("未授予「所有文件访问」权限, 正在打开授权页…\n");
-                append("请在该页面找到「所有文件访问权限」(或「允许管理所有文件」)并开启, 返回后重跑 download\n");
-                requestStorageAccess();
+    private void execNative(final String args) {
+        // Run the native binary on a background thread: waitFor() blocks, and
+        // doing that on the UI thread freezes the app (ANR "未响应") while a
+        // whole book downloads. ReaderThread already posts output via
+        // runOnUiThread, so progress still streams into the TextView live.
+        new Thread(new Runnable() {
+            public void run() {
+                String bin = binaryPath();
+                // Auto-append a default download dir for `download <id>` so the user
+                // never has to remember a path. Only when no extra arg is present.
+                String cmdArgs = args;
+                String[] tok = args.trim().split("\\s+");
+                if (tok.length >= 1 && tok[0].equals("download") && tok.length == 2) {
+                    // On Android 11+, if All-Files access isn't granted yet, open the
+                    // system grant page (the real "所有文件访问" toggle) BEFORE running,
+                    // so the user can enable it; this run still falls back to the
+                    // app-private dir, the next run lands in /sdcard/downloads.
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+                        !Environment.isExternalStorageManager()) {
+                        append("未授予「所有文件访问」权限, 正在打开授权页…\n");
+                        append("请在该页面找到「所有文件访问权限」(或「允许管理所有文件」)并开启, 返回后重跑 download\n");
+                        requestStorageAccess();
+                    }
+                    cmdArgs = args + " " + defaultDownloadDir();
+                }
+                try {
+                    String[] argv = (bin + " " + cmdArgs).split(" ");
+                    Process p = Runtime.getRuntime().exec(argv);
+                    // stream stdout + stderr concurrently so we never deadlock
+                    new ReaderThread(p.getInputStream()).start();
+                    new ReaderThread(p.getErrorStream()).start();
+                    int rc = p.waitFor();
+                    append("\n[进程退出码: " + rc + "]\n");
+                } catch (IOException e) {
+                    append("执行失败: " + e.getMessage() + "\n");
+                } catch (InterruptedException e) {
+                    append("被中断\n");
+                }
             }
-            args = args + " " + defaultDownloadDir();
-        }
-        try {
-            String[] argv = (bin + " " + args).split(" ");
-            Process p = Runtime.getRuntime().exec(argv);
-            // stream stdout + stderr concurrently so we never deadlock
-            new ReaderThread(p.getInputStream()).start();
-            new ReaderThread(p.getErrorStream()).start();
-            int rc = p.waitFor();
-            append("\n[进程退出码: " + rc + "]\n");
-        } catch (IOException e) {
-            append("执行失败: " + e.getMessage() + "\n");
-        } catch (InterruptedException e) {
-            append("被中断\n");
-        }
+        }).start();
     }
 
     private void append(final String s) {

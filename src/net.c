@@ -332,13 +332,24 @@ int http_get(const char *url, const char *referer, const char *cookie,
         if (cur.https) {
             tls_ctx = tls_connect(fd, cur.host);
             if (!tls_ctx) {
-                fprintf(stderr, "[net] TLS握手失败 (BearSSL err=0x%04x)\n",
+                fprintf(stderr, "[net] TLS握手失败 (BearSSL err=0x%04x), 降级 http:// 重试\n",
                         tls_last_error(NULL));
                 close(fd);
                 free_parsed_url(&cur);
-                free(working_url);
-                free_parsed_url(&pu);
-                return -1;
+                /* Retry the same URL over plain HTTP. The image CDN serves
+                 * both; some networks (SNI filtering) or CDN bot-protection
+                 * (TLS fingerprinting) block the TLS handshake while plain
+                 * HTTP still works. Only downgrades once: the http:// branch
+                 * below never calls tls_connect, so this cannot loop. */
+                if (strncmp(working_url, "https://", 8) == 0) {
+                    size_t need = strlen(working_url) + 1;
+                    char *http_url = malloc(need);
+                    if (!http_url) { free(working_url); free_parsed_url(&pu); return -1; }
+                    snprintf(http_url, need, "http://%s", working_url + 8);
+                    free(working_url);
+                    working_url = http_url;
+                }
+                continue;
             }
             tls_ok = 1;
         }
