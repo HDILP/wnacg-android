@@ -47,7 +47,9 @@ echo "[apk] aapt2 link ..."
 #    Modern d8 requires --output to be a .zip/.jar or a directory, so we emit a
 #    classes.zip and extract classes.dex from it.
 echo "[apk] javac + d8 ..."
-rm -rf "$WORK/obj" "$WORK/gen" "$WORK/classes.zip"; mkdir -p "$WORK/obj" "$WORK/gen"
+# NOTE: do NOT rm $WORK/gen here — aapt2 link (step 2) already generated R.java
+# into it, and javac needs it. Only clean the javac output + d8 zip.
+rm -rf "$WORK/obj" "$WORK/classes.zip"; mkdir -p "$WORK/obj" "$WORK/gen"
 javac -source 1.8 -target 1.8 -cp "$PLAT/android.jar" -d "$WORK/obj" \
     "$APP_ROOT/java/com/wnacg/android/MainActivity.java" \
     $(find "$WORK/gen" -name 'R.java')
