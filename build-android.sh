@@ -38,11 +38,11 @@ OUT_DIR=android/app/src/main/assets
 OUT_BIN="$OUT_DIR/wnacg"
 
 echo "[android] NDK=$NDK  API=$API"
-echo "[debug] SYSROOT/usr/lib contents:"; ls -la "$SYSROOT/usr/lib" 2>&1 | head -30
-echo "[debug] find libc in NDK:"; find "$NDK/platforms/android-$API" -name 'libc.so' -o -name 'libc.a' 2>/dev/null | head
-echo "[debug] gcc -print-file-name=libc.so:"; "$TC-gcc" -print-file-name=libc.so 2>&1
-echo "[debug] gcc -print-file-name=libgcc.a:"; "$TC-gcc" -print-file-name=libgcc.a 2>&1
-echo "[debug] gcc -print-search-dirs:"; "$TC-gcc" -print-search-dirs 2>&1 | head
+echo "[debug] SYSROOT/usr/lib contents:"; ls -la "$SYSROOT/usr/lib" 2>&1 | head -30 || true
+echo "[debug] find libc:"; find "$NDK/platforms/android-$API" \( -name 'libc.so' -o -name 'libc.a' \) 2>/dev/null | head || true
+echo "[debug] gcc -print-file-name=libc.so: $("$TC-gcc" -print-file-name=libc.so 2>&1)"
+echo "[debug] gcc -print-file-name=libgcc.a: $("$TC-gcc" -print-file-name=libgcc.a 2>&1)"
+echo "[debug] gcc -print-search-dirs: $("$TC-gcc" -print-search-dirs 2>&1 | head -3)"
 
 # 1) Cross-compile BearSSL for ARM (static lib).
 if [ ! -f "$BS_LIB_ANDROID" ]; then
