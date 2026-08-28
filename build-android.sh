@@ -57,7 +57,7 @@ fi
 mkdir -p "$OUT_DIR"
 echo "[android] compiling wnacg (arm, armv5te) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
-    -O2 -std=c99 -D_GNU_SOURCE \
+    -O2 -std=c99 \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c \
