@@ -37,7 +37,10 @@ echo "[apk] aapt2 compile resources ..."
 "$BT/aapt2" compile --dir "$APP_ROOT/res" -o "$WORK/res.zip"
 
 # 2) Link: manifest + resources. (Native libs are injected via zip after link —
-#    aapt2 link has no -j equivalent.)
+#    aapt2 link has no -j equivalent.) Note: do NOT pass --rename-manifest-package;
+#    the manifest already declares package="com.wnacg.android", and that flag
+#    combined with --min-sdk-version 9 makes newer aapt2 silently print help and
+#    emit NO apk.
 echo "[apk] aapt2 link ..."
 "$BT/aapt2" link --no-auto-version \
     -o "$WORK/app-unsigned.apk" \
@@ -45,8 +48,7 @@ echo "[apk] aapt2 link ..."
     --manifest "$APP_ROOT/AndroidManifest.xml" \
     "$WORK/res.zip" \
     --java "$WORK/gen" \
-    --min-sdk-version 9 --target-sdk-version 34 \
-    --rename-manifest-package com.wnacg.android
+    --min-sdk-version 9 --target-sdk-version 34
 
 # 2b) Inject native libraries into lib/armeabi/ (aapt2 has no -j; we zip them in).
 if [ -d "$APP_ROOT/jniLibs" ]; then
@@ -67,12 +69,15 @@ javac -source 1.8 -target 1.8 -cp "$PLAT_JAVA/android.jar" -d "$WORK/obj" \
     "$APP_ROOT/java/com/wnacg/android/MainActivity.java" \
     $(find "$WORK/gen" -name 'R.java')
 "$BT/d8" --output "$WORK/classes.zip" $(find "$WORK/obj" -name '*.class')
-( cd "$WORK" && rm -f classes.dex && unzip -o -q classes.zip '*.dex' && mv classes.dex classes.dex 2>/dev/null ) || true
+# extract classes.dex from the d8 zip
+rm -f "$WORK/classes.dex"
+( cd "$WORK" && unzip -o -q classes.zip '*.dex' )
 ls -l "$WORK/classes.dex" 2>/dev/null || { echo "[apk] ERROR: classes.dex not produced"; exit 1; }
 
 # 4) Merge dex into the apk (apk is a zip).
 echo "[apk] add classes.dex ..."
-(cd "$WORK" && cp app-unsigned.apk app-withdex.apk && zip -q -j app-withdex.apk classes.dex)
+cp "$WORK/app-unsigned.apk" "$WORK/app-withdex.apk"
+( cd "$WORK" && zip -q -j app-withdex.apk classes.dex )
 
 # 5) Align + sign with a throwaway debug keystore.
 echo "[apk] zipalign + apksigner ..."
