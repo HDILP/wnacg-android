@@ -12,53 +12,43 @@
 # prebuilt and platforms/android-9). Newer NDKs dropped armeabi and raise the
 # minimum API, so pin r16.1.4479499 in CI / your local install.
 #
-# We build a STANDALONE toolchain via the NDK helper script. GCC 4.9's bare
-# --sysroot against the unified NDK layout fails to locate libgcc/crt objects
-# (link errors for abort/raise/memcmp), whereas the standalone toolchain bakes
-# in a correct, self-contained sysroot so plain `$TC-gcc` just works.
+# r16b uses "unified headers" (under $NDK/sysroot/usr/include) but the runtime
+# libs still live in the per-platform directory $NDK/platforms/android-9/arch-arm.
+# We point --sysroot at the platform dir (so the gcc driver finds libc/crt/libgcc
+# automatically) and add -isystem for the unified headers. The standalone-toolchain
+# helper rejects API < 14, so we drive the compiler directly instead.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 
 NDK="${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must point at an NDK r16b install}"
-# The GitHub runner ships a newer NDK too; make-standalone-toolchain.sh reads
-# ANDROID_NDK_ROOT first, so pin it at our r16b to avoid the wrong NDK.
 export ANDROID_NDK_ROOT="$NDK"
 API=9
 DOMAIN='www.wn09.shop'
 
-# Standalone toolchain (baked-in sysroot for API 9 / armeabi).
-STANDALONE="${ANDROID_STANDALONE_TOOLCHAIN:-/opt/android-toolchain-api$API}"
-if [ ! -x "$STANDALONE/bin/arm-linux-androideabi-gcc" ]; then
-    echo "[android] building standalone toolchain (API $API, armeabi) ..."
-    if command -v python >/dev/null 2>&1; then
-        PY=python
-    else
-        PY=python3
-    fi
-    echo "[debug] python=$PY  NDK=$NDK"
-    echo "[debug] running python script directly:"
-    "$PY" "$NDK/build/tools/make_standalone_toolchain.py" \
-        --arch arm --api 9 --stl gnustl \
-        --install-dir="$STANDALONE" 2>&1 | tail -25 || true
-    echo "[debug] standalone created? $(ls -ld "$STANDALONE/bin" 2>&1)"
-fi
-
-TC="$STANDALONE/bin/arm-linux-androideabi"
+SYSROOT="$NDK/platforms/android-$API/arch-arm"
+UNIFIED_INC="$NDK/sysroot/usr/include"
+UNIFIED_INC_ARCH="$NDK/sysroot/usr/include/arm-linux-androideabi"
+SYSINC="-isystem $UNIFIED_INC -isystem $UNIFIED_INC_ARCH"
+TC="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linux-androideabi"
 BS_DIR=thirdparty/bearssl-0.6
 BS_INC="$BS_DIR/inc"
 BS_LIB_ANDROID="$BS_DIR/build-android/libbearssl.a"
 OUT_DIR=android/app/src/main/assets
 OUT_BIN="$OUT_DIR/wnacg"
 
-echo "[android] toolchain=$STANDALONE  API=$API"
+echo "[android] NDK=$NDK  API=$API"
+echo "[debug] gcc -print-sysroot: $("$TC-gcc" -print-sysroot 2>&1)"
+echo "[debug] gcc -print-libgcc-file-name: $("$TC-gcc" -print-libgcc-file-name 2>&1)"
+echo "[debug] gcc -print-file-name=libc.a: $("$TC-gcc" -print-file-name=libc.a 2>&1)"
+echo "[debug] gcc -print-file-name=crtbegin_static.o: $("$TC-gcc" -print-file-name=crtbegin_static.o 2>&1)"
 
 # 1) Cross-compile BearSSL for ARM (static lib).
 if [ ! -f "$BS_LIB_ANDROID" ]; then
     echo "[android] compiling BearSSL (arm) ..."
     (cd "$BS_DIR" && \
         make BUILD=build-android \
-             CC="$TC-gcc" \
+             CC="$TC-gcc --sysroot=$SYSROOT $SYSINC" \
              AR="$TC-ar" RANLIB="$TC-ranlib" \
              lib)
 fi
@@ -66,12 +56,13 @@ fi
 # 2) Cross-compile the app (static against the NDK libc, no shared deps).
 mkdir -p "$OUT_DIR"
 echo "[android] compiling wnacg (arm, static) ..."
-"$TC-gcc" \
+"$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 -D_GNU_SOURCE -static \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c \
-    -o "$OUT_BIN" "$BS_LIB_ANDROID"
+    -o "$OUT_BIN" "$BS_LIB_ANDROID" \
+    -lc -lm -ldl
 
 "$TC-strip" "$OUT_BIN" 2>/dev/null || true
 echo "[android] wrote $OUT_BIN ($(wc -c < "$OUT_BIN") bytes)"
