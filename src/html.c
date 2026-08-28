@@ -159,6 +159,13 @@ static int parse_one_li(const char *h, size_t hlen, size_t li_start,
             while (el > sl && isspace((unsigned char)info[el - 1])) el--;
             out->additional = xstrndup(info + sl, el - sl);
             free(info);
+            /* strip embedded CR/LF (the info_col text contains a line break
+             * between e.g. "32張圖片，" and "創建於...") so it renders on one
+             * clean line in the terminal/TextView. */
+            for (size_t k = 0; out->additional[k]; k++) {
+                if (out->additional[k] == '\r' || out->additional[k] == '\n')
+                    out->additional[k] = ' ';
+            }
         }
     }
     return 0;

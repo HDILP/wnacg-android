@@ -122,18 +122,26 @@ int cmd_search(int argc, char **argv, int is_tag) {
     }
     free_http_response(&r);
 
-    printf("=== 搜索 \"%s\" 第 %ld/%ld 页, 共 %d 条 ===\n", kw, s.current_page,
-           s.total_page, s.count);
-    if (is_tag && page > 1) {
-        printf("注意: 站点对 f=tag 只返回第1页, 后续页服务端为空 (这是站点限制, 非解析问题)\n");
-    } else if (is_tag) {
-        printf("注意: tag 模式仅第1页有结果 (站点限制), 翻页可能为空\n");
+    /* ---- 输出排版 (手机 TextView 友好: 分隔线 + 每行一项信息) ---- */
+    printf("\n");
+    printf("%s 「%s」  第 %ld/%ld 页 · 共 %d 条\n",
+           is_tag ? "标签" : "搜索", kw, s.current_page, s.total_page, s.count);
+    if (is_tag) {
+        printf("[!] tag 模式仅第 1 页有结果 (站点限制, 翻页可能为空)\n");
     }
+    printf("────────────────────────────\n");
+
     for (int i = 0; i < s.count; i++) {
-        printf("[%ld] %s\n      图: %s\n", s.items[i].id,
-               s.items[i].title ? s.items[i].title : "(无标题)",
-               s.items[i].additional ? s.items[i].additional : "");
+        comic_entry *e = &s.items[i];
+        const char *show_title = (e->title_html && *e->title_html)
+                                  ? e->title_html : (e->title ? e->title : "(无标题)");
+        printf("\n%d. %s\n", i + 1, show_title);
+        printf("   ID: %ld", e->id);
+        if (e->additional && *e->additional)
+            printf("    %s", e->additional);
+        printf("\n   下载: download %ld\n", e->id);
     }
+    printf("\n────────────────────────────\n");
     free_search_result(&s);
     return 0;
 }
