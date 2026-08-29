@@ -5,11 +5,17 @@
     android:orientation="vertical"
     android:padding="6dp">
 
-    <!-- command bar -->
+    <!-- command bar: pick a verb from the dropdown, type the argument, run -->
     <LinearLayout
         android:layout_width="fill_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
+
+        <Spinner
+            android:id="@+id/verb"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginRight="4dp" />
 
         <EditText
             android:id="@+id/cmd"

@@ -1,7 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">wnacg</string>
-    <string name="hint_command">search 百合   |   tag 汉化   |   download 380585</string>
+    <string name="hint_command">关键词 / ID…</string>
     <string name="run">运行</string>
     <string name="output">输出</string>
+
+    <!-- dropdown verbs: label shown in the spinner, and the command token it emits -->
+    <string-array name="verb_labels">
+        <item>搜索</item>
+        <item>标签</item>
+        <item>下载</item>
+        <item>其他</item>
+    </string-array>
+    <string-array name="verb_tokens">
+        <item>search</item>
+        <item>tag</item>
+        <item>download</item>
+        <item></item>
+    </string-array>
+
+    <!-- per-verb hint for the argument box -->
+    <string-array name="verb_hints">
+        <item>关键词，如 百合</item>
+        <item>标签，如 汉化</item>
+        <item>漫画 ID，如 380585</item>
+        <item>完整命令，如 help</item>
+    </string-array>
 </resources>

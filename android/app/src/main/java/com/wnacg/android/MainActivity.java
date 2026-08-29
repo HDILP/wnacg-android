@@ -4,7 +4,9 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Spinner;
 import android.widget.TextView;
+import android.widget.AdapterView;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -87,7 +89,8 @@ public class MainActivity extends Activity {
     private enum Mode { LOG, RESULTS }
 
     private TextView out;          // plain log (detail / errors / help)
-    private EditText cmd;
+    private Spinner verb;           // dropdown to pick the command verb
+    private EditText cmd;           // argument box
     private ScrollView logScroll;
     private ScrollView resScroll;
     private LinearLayout results;  // structured card container
@@ -121,6 +124,25 @@ public class MainActivity extends Activity {
         progress = (ProgressBar) findViewById(R.id.progress);
         Button run = (Button) findViewById(R.id.run);
 
+        // Verb dropdown. Labels and the command tokens they emit are kept in
+        // string-arrays so they stay in sync. The "其他" entry emits an empty
+        // token, meaning the argument box is sent through verbatim (help, etc).
+        verb = (Spinner) findViewById(R.id.verb);
+        ArrayAdapter<CharSequence> verbAdapter = ArrayAdapter.createFromResource(
+                this, R.array.verb_labels, android.R.layout.simple_spinner_item);
+        verbAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+        verb.setAdapter(verbAdapter);
+        final String[] tokens = getResources().getStringArray(R.array.verb_tokens);
+        final String[] hints = getResources().getStringArray(R.array.verb_hints);
+        cmd.setHint(hints[0]);
+        verb.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            public void onItemSelected(AdapterView<?> parent, android.view.View view,
+                                       int position, long id) {
+                cmd.setHint(hints[position]);
+            }
+            public void onNothingSelected(AdapterView<?> parent) { /* keep current hint */ }
+        });
+
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads.
         out.setText("wnacg v1.8\n");  // version stamp: confirms which build is installed
@@ -129,8 +151,18 @@ public class MainActivity extends Activity {
 
         run.setOnClickListener(new Button.OnClickListener() {
             public void onClick(android.view.View v) {
-                String line = cmd.getText().toString().trim();
-                if (line.length() == 0) return;
+                int pos = verb.getSelectedItemPosition();
+                String token = tokens[pos];
+                String arg = cmd.getText().toString().trim();
+                String line;
+                if (token.length() == 0) {
+                    line = arg;                       // 其他: 原样执行
+                } else if (arg.length() == 0) {
+                    line = token;                     // 仅动词, 无参数
+                } else {
+                    line = token + " " + arg;
+                }
+                if (line.trim().length() == 0) return;
                 execNative(line);
             }
         });
