@@ -130,13 +130,13 @@ build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 ke
 1. 拿到 `wnacg.apk`（自己编，或去 Actions 下载 artifact）。
 2. 设备开「未知来源」安装：`设置 → 应用程序 → 未知来源`。
 3. `adb install -r wnacg.apk`（或拷到 sdcard 用文件管理器点装；同证书可覆盖安装）。
-4. 打开 app：顶部显示 `wnacg v1.5`（版本戳，确认装的是最新包）。输入框里直接打
+4. 打开 app：顶部显示 `wnacg v1.6`（版本戳，确认装的是最新包）。输入框里直接打
    `download 257351`，点「运行」；授权「所有文件访问」后，图片会自动存到
    `/sdcard/downloads/257351/0001.webp ...`（不写路径即走固定目录；也可手动指定
    `download 257351 /sdcard/downloads`）。
-5. 搜索/标签结果带封面缩略图（API 14+；2.3 无 WebP 解码，封面行按文字显示）。
-   封面经原生二进制的 `cover <id> <url> <path>` 子命令下载（享受 TLS 降级 + IPv4 优先
-   修复），缓存在 `cacheDir/covers/`。
+5. 搜索/标签结果带封面缩略图（API 14+）。2.3/3.x 无 WebP 解码，封面行被完全吞掉，
+   搜索输出是纯文字列表。封面经原生二进制的 `cover <id> <url> <path>` 子命令下载
+   （享受 TLS 降级 + IPv4 优先修复），缓存在 `cacheDir/covers/`。
 6. `adb shell` 也可直接跑二进制：API 16+ 在 `nativeLibraryDir` 跑 `./libwnacg.so`；
    API 9–15 用 filesDir 里的 `wnacg-legacy`。
 
@@ -172,5 +172,5 @@ build.sh / build-android.sh / packapk.sh   编译与打包脚本
 - 证书不校验（见上）。如要开启，改 `src/tls.c` 的 x509 校验回调。
 - 仅验证过 `www.wn09.shop`；换镜像站需同步改四处域名宏（src/wnacg.c、Makefile、build.sh、build-android.sh）。
 - NDK r16b 是硬依赖；更老的 NDK 缺 armeabi，更新的 NDK 抬高了最低 API。
-- 封面缩略图只支持 API 14+（WebP 解码能力）；2.3/3.x 上封面按文字显示，无法内联图片。
+- 封面缩略图只支持 API 14+（WebP 解码能力）；2.3/3.x 上封面行被完全吞掉（纯文字列表）。
 - 站点 `f=tag` 只返回第 1 页（翻页为空），属站点行为（见上文 tag 说明）。
