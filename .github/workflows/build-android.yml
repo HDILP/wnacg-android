@@ -80,17 +80,25 @@ jobs:
           fi
           ./build-android.sh
 
-      - name: Diagnose — can CI reach GitHub? (network probe)
+      - name: Diagnose — inspect libwebp tarball + NDK tools
         run: |
           set -eux
-          echo "=== curl -v github tarball ==="
-          curl -vSL --max-time 30 -o /tmp/webp.tar.gz \
-            https://github.com/webmproject/libwebp/archive/refs/tags/v1.3.2.tar.gz 2>&1 | tail -25 || echo "curl rc=$?"
-          echo "=== downloaded file ==="
-          ls -l /tmp/webp.tar.gz 2>/dev/null || echo "no file"
-          file /tmp/webp.tar.gz 2>/dev/null || true
-          echo "=== git ls-remote ==="
-          git ls-remote --heads https://github.com/webmproject/libwebp.git 2>&1 | head -5 || echo "ls-remote rc=$?"
+          cd "$GITHUB_WORKSPACE"
+          curl -fSL --connect-timeout 30 --max-time 300 -o /tmp/webp.tar.gz \
+            https://github.com/webmproject/libwebp/archive/refs/tags/v1.3.2.tar.gz
+          rm -rf /tmp/webp && mkdir -p /tmp/webp && tar xzf /tmp/webp.tar.gz -C /tmp/webp
+          echo "=== src/dec contents ==="
+          ls -la /tmp/webp/libwebp-1.3.2/src/dec/ 2>&1 | head -20
+          echo "=== decode.c present? ==="
+          ls -la /tmp/webp/libwebp-1.3.2/src/dec/decode.c 2>&1 || echo "NO decode.c"
+          echo "=== top-level build files ==="
+          ls -la /tmp/webp/libwebp-1.3.2/ | grep -iE 'android|autogen|configure|cmake|makefile'
+          echo "=== ndk-build available? ==="
+          ls /opt/android-ndk-r16b/ndk-build 2>&1 || echo "NO ndk-build"
+          echo "=== cmake available? ==="
+          which cmake 2>&1 || echo "NO cmake"
+          echo "=== autoconf/automake/libtool? ==="
+          which autoconf automake libtool 2>&1 || echo "missing some autotools"
 
       - name: Probe — cross-compile libwebp for armeabi (2.3 WebP support, early check)
         env:
