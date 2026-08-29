@@ -70,14 +70,14 @@ int main(void) {
         fprintf(stderr, "FAIL: missing IHDR\n");
         return 1;
     }
-    int pw = rd32(ihdr + 8), ph = rd32(ihdr + 12);
+    int pw = rd32(ihdr + 12), ph = rd32(ihdr + 16);
     if (pw != w || ph != h) {
         fprintf(stderr, "FAIL: PNG size %dx%d (want %dx%d)\n", pw, ph, w, h);
         return 1;
     }
-    if (ihdr[16] != 8 || ihdr[17] != 6) { /* 8-bit, RGBA */
+    if (ihdr[20] != 8 || ihdr[21] != 6) { /* 8-bit, RGBA */
         fprintf(stderr, "FAIL: PNG not 8-bit RGBA (bitdepth=%d color=%d)\n",
-                ihdr[16], ihdr[17]);
+                ihdr[20], ihdr[21]);
         return 1;
     }
 
