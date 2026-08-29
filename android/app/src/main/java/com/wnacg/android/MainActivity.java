@@ -89,7 +89,7 @@ public class MainActivity extends Activity {
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads. The toggle lives on the app-info
         // page, not the empty "权限管理" list — we explain that in the output box.
-        out.setText("wnacg v1.4\n");  // version stamp: confirms which build is installed
+        out.setText("wnacg v1.5\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
@@ -241,8 +241,12 @@ public class MainActivity extends Activity {
 
     /** Handles one output line. Returns true if the line was a "封面:" line
      *  (a placeholder + async cover fetch was queued). Called from the native
-     *  command's reader thread, so appends keep their display order. */
+     *  command's reader thread, so appends keep their display order.
+     *  API < 14 (Android 2.3/3.x): BitmapFactory has NO WebP support (added in
+     *  API 14), so inline covers are impossible — leave the line as text so at
+     *  least the URL is visible and no "解码失败" spam appears. */
     private boolean handleStreamLine(final String line) {
+        if (Build.VERSION.SDK_INT < 14) return false; // stream the line verbatim
         Matcher m = COVER_LINE.matcher(line.trim());
         if (!m.matches()) return false;
         final String url = m.group(1);
