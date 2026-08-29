@@ -132,10 +132,12 @@ build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 ke
 1. 拿到 `wnacg.apk`（自己编，或去 Actions 下载 artifact）。
 2. 设备开「未知来源」安装：`设置 → 应用程序 → 未知来源`。
 3. `adb install -r wnacg.apk`（或拷到 sdcard 用文件管理器点装；同证书可覆盖安装）。
-4. 打开 app：顶部显示 `wnacg v1.8`（版本戳，确认装的是最新包）。输入框里直接打
-   `download 257351`，点「运行」；授权「所有文件访问」后，图片会自动存到
-   `/sdcard/downloads/257351/0001.webp ...`（不写路径即走固定目录；也可手动指定
-   `download 257351 /sdcard/downloads`）。下载时顶部显示横向进度条 + 「N/M」实时计数。
+4. 打开 app：顶部显示 `wnacg v1.8`（版本戳，确认装的是最新包）。命令栏左侧下拉选指令
+   （搜索 / 标签 / 下载 / 其他），右侧框填参数（关键词或漫画 ID），点「运行」即可——
+   例如选「下载」填 `257351`。「其他」项原样执行参数框内容（如 `help`）。授权「所有文件
+   访问」后，图片会自动存到 `/sdcard/downloads/257351/0001.webp ...`（不写路径即走固定
+   目录；也可手动指定 `download 257351 /sdcard/downloads`）。下载时顶部显示横向进度条
+   + 「N/M」实时计数。
 5. 搜索/标签结果渲染成卡片：每张卡含封面缩略图（含 Android 2.3/3.x）、标题、ID/信息、以及
    「下载」按钮（点了直接对该 ID 发起 `download`）。封面 WebP 由原生二进制在服务端下载后
    解码并转存为 PNG，因此即便 2.3 的 BitmapFactory 无 WebP 解码器也能显示（BMP 在 2.3 同样解不出，
@@ -156,18 +158,28 @@ build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 ke
 
 ```
 src/
-  wnacg.c   命令行主程序：search/tag/detail/download/cover + URL 编码
-  html.c    HTML 解析：搜索结果列表 + imglist（含 fast_img_host 变量替换）
-  net.c     HTTP GET、TLS降级/重定向、IPv4优先+5s超时连接、流式读取
-  tls.c     BearSSL 客户端封装（手动驱动引擎，关闭证书校验）
+  wnacg.c      命令行主程序：search/tag/detail/download/cover + URL 编码
+  html.c       HTML 解析：搜索结果列表 + imglist（含 fast_img_host 变量替换）
+  net.c        HTTP GET、TLS降级/重定向、IPv4优先+5s超时连接、流式读取
+  tls.c        BearSSL 客户端封装（手动驱动引擎，关闭证书校验）
+  webp_bmp.c   cover 命令：WebP→RGBA（libwebp）后转 PNG（见下）；非 WebP 原样落盘
+  png_write.c  RGBA→PNG writer（zlib deflate + 自写 CRC32，不依赖 libpng）
 thirdparty/bearssl-0.6/    BearSSL 0.6（静态库，主机+安卓各编一份）
-tests/                  样例 HTML 解析单测（parse_test.c + 样例）
+thirdparty/libwebp/        libwebp 1.3.2（仅 Android 编译期从 tarball 拉取，CI 产物
+                            build-android/libwebp.a 供 armeabi 链接；build-host/ 供单测）
+tests/                   样例 HTML 解析单测（parse_test.c）+ WebP→PNG round-trip
+                           （webp_roundtrip.c）
 android/app/src/main/   Java 壳（minSdk=9）+ manifest + resources
                         + jniLibs/armeabi/libwnacg.so（PIE，API 16+）
                         + assets/wnacg-legacy（非 PIE，API 9–15）
-build.sh / build-android.sh / packapk.sh   编译与打包脚本
+build.sh / build-android.sh / packapk.sh / build-webp.sh / build-webp-host.sh
+                        编译与打包脚本（build-webp*.sh 拉 libwebp 源码并编解码器）
 .github/workflows/      CI：ubuntu 上编 NDK/SDK、缓存 keystore、出 apk artifact
 ```
+
+> 封面 WebP 解码走 libwebp（ndk-build 编 armeabi 解码器，非 autotools），解码出的 RGBA
+> 由 `png_write.c` 写成 PNG（zlib 走 NDK 自带 libz，链接 `-lz`）。2.3 的 BitmapFactory 既
+> 无 WebP 解码器也无 BMP 解码器，故最终用 PNG——这是 2026-08-29 真机反馈后从 BMP 改为 PNG。
 
 ---
 
