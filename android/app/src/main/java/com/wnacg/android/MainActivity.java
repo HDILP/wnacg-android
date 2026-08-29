@@ -89,7 +89,7 @@ public class MainActivity extends Activity {
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads. The toggle lives on the app-info
         // page, not the empty "权限管理" list — we explain that in the output box.
-        out.setText("wnacg v1.2\n");  // version stamp: confirms which build is installed
+        out.setText("wnacg v1.3\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
@@ -229,11 +229,22 @@ public class MainActivity extends Activity {
                     replaceTokenText(idx, "(封面解码失败)");
                     return;
                 }
-                final float density = getResources().getDisplayMetrics().density;
-                final int h = (int) (THUMB_H_DP * density + 0.5f);
-                final int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
-                final Bitmap small = Bitmap.createScaledBitmap(bmp, w, h, true);
-                replaceToken(String.format(TOKEN_FMT, idx), new ImageSpan(small));
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        final float density = getResources().getDisplayMetrics().density;
+                        // Target height THUMB_H_DP, width follows aspect — BUT
+                        // clamp to the TextView's usable width so the image can
+                        // never overflow its line and overlap nearby text.
+                        int availW = out.getWidth() - out.getPaddingLeft() - out.getPaddingRight();
+                        int h = (int) (THUMB_H_DP * density + 0.5f);
+                        int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
+                        if (availW > 0 && w > availW) {
+                            w = availW;
+                            h = Math.max(1, w * bmp.getHeight() / bmp.getWidth());
+                        }
+                        applyCoverAt(String.format(TOKEN_FMT, idx), bmp, w, h);
+                    }
+                });
             }
         });
         return true;
@@ -298,25 +309,30 @@ public class MainActivity extends Activity {
 
     /** Replace the token ▣N▣ (exact unique match) with an image. Using the
      *  unique token string means completion order and earlier failures can
-     *  never map an image onto the wrong row. */
-    private void replaceToken(final String token, ImageSpan span) {
-        runOnUiThread(new Runnable() {
-            public void run() {
-                CharSequence cur = out.getText();
-                if (!(cur instanceof SpannableStringBuilder)) return;
-                SpannableStringBuilder ss = (SpannableStringBuilder) cur;
-                int pos = ss.toString().indexOf(token);
-                if (pos < 0) return; // already replaced or cleared
-                // swap the token for a wide space carrying the image
-                ss.replace(pos, pos + token.length(), " ");
-                ss.setSpan(span, pos, pos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-                // Without this the TextView keeps its stale layout and the image
-                // renders on top of the following text (results "叠在一起") until
-                // the next full redraw (app switch). Force re-measure + repaint.
-                out.invalidate();
-                out.requestLayout();
-            }
-        });
+     *  never map an image onto the wrong row. Runs on the UI thread. */
+    private void applyCoverAt(final String token, final Bitmap bmp,
+                              final int w, final int h) {
+        CharSequence cur = out.getText();
+        if (!(cur instanceof SpannableStringBuilder)) return;
+        SpannableStringBuilder ss = (SpannableStringBuilder) cur;
+        int pos = ss.toString().indexOf(token);
+        if (pos < 0) return; // already replaced or cleared
+        final Bitmap small;
+        try {
+            small = Bitmap.createScaledBitmap(bmp, w, h, true);
+        } catch (OutOfMemoryError e) {
+            Log.w(TAG, "cover scale OOM");
+            ss.replace(pos, pos + token.length(), "(封面过大)");
+            return;
+        }
+        // swap the token for a wide space carrying the image
+        ss.replace(pos, pos + token.length(), " ");
+        ss.setSpan(new ImageSpan(small), pos, pos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+        // Without this the TextView keeps its stale layout and the image
+        // renders on top of the following text (results "叠在一起") until
+        // the next full redraw (app switch). Force re-measure + repaint.
+        out.invalidate();
+        out.requestLayout();
     }
 
     /** Replace the token ▣N▣ with a fallback text (fetch/decode failure). */

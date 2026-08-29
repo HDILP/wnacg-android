@@ -2,7 +2,7 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.wnacg.android"
     android:versionCode="1"
-    android:versionName="1.2">
+    android:versionName="1.3">
 
     <!-- API 9: these are install-time permissions, no runtime prompt needed. -->
     <uses-permission android:name="android.permission.INTERNET" />
