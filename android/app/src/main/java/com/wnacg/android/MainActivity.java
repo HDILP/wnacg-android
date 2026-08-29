@@ -57,6 +57,8 @@ public class MainActivity extends Activity {
     private static final String LIB_NAME = "wnacg";   // -> libwnacg.so
     /** Unique placeholder swapped for a cover thumbnail when it arrives. */
     private static final String COVER_TOKEN = "\u25A3"; // ▣
+    /** Cover thumbnail target height in dp. */
+    private static final int THUMB_H_DP = 100;
     private static final Pattern COVER_LINE =
             Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
     private static final Pattern NUM_RUN = Pattern.compile("\\d+");
@@ -216,7 +218,7 @@ public class MainActivity extends Activity {
                 final Bitmap bmp = decodeScaled(f);
                 if (bmp == null) return;
                 final float density = getResources().getDisplayMetrics().density;
-                final int h = (int) (56 * density + 0.5f);
+                final int h = (int) (THUMB_H_DP * density + 0.5f);
                 final int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
                 final Bitmap small = Bitmap.createScaledBitmap(bmp, w, h, true);
                 runOnUiThread(new Runnable() {
@@ -273,7 +275,7 @@ public class MainActivity extends Activity {
         opts.inJustDecodeBounds = true;
         BitmapFactory.decodeFile(f.getAbsolutePath(), opts);
         float density = getResources().getDisplayMetrics().density;
-        int targetH = (int) (56 * density + 0.5f);
+        int targetH = (int) (THUMB_H_DP * density + 0.5f);
         int sample = 1;
         while (opts.outHeight / (sample * 2) >= targetH) sample *= 2;
         opts.inJustDecodeBounds = false;
