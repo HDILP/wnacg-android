@@ -483,7 +483,6 @@ public class MainActivity extends Activity {
                 }
                 try {
                     List<String> cmdline = new java.util.ArrayList<String>();
-                    cmdline.add(bin);
                     for (String t : (bin + " " + cmdArgs).split(" ")) cmdline.add(t);
                     ProcessBuilder pb = new ProcessBuilder(cmdline);
                     pb.environment().put("WNACG_DOMAIN", domain());
