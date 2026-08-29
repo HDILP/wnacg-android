@@ -32,7 +32,7 @@ static int is_webp(const unsigned char *data, long len) {
 
 int save_image_auto(const char *url, const char *out_path) {
     http_response r;
-    if (http_get(url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
         fprintf(stderr, "  [!] network error: %s\n", url);
         return -1;
     }

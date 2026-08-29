@@ -14,6 +14,13 @@
 #define DEFAULT_API_DOMAIN "www.wn09.shop"
 #endif
 
+/* Runtime domain override (see net.h). */
+const char *g_api_domain = DEFAULT_API_DOMAIN;
+void init_api_domain(void) {
+    const char *e = getenv("WNACG_DOMAIN");
+    if (e && *e) g_api_domain = e;
+}
+
 /* Percent-encode a string for use in a URL query (RFC 3986 unsafe set). */
 static void url_encode(const char *src, char *dst, size_t dstcap) {
     static const char hex[] = "0123456789ABCDEF";
@@ -37,7 +44,7 @@ static void url_encode(const char *src, char *dst, size_t dstcap) {
 /* Download a single image URL to the given path. Returns 0 on success. */
 static int download_image(const char *url, const char *out_path) {
     http_response r;
-    if (http_get(url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
         fprintf(stderr, "  [!] network error: %s\n", url);
         return -1;
     }
@@ -121,16 +128,16 @@ int cmd_search(int argc, char **argv, int is_tag) {
          * Caveat: the server only serves page 1 for f=tag (p>=2 returns empty);
          * we surface that to the user below. */
         snprintf(url, sizeof(url),
-                 "https://" DEFAULT_API_DOMAIN "/search/index.php?q=%s&syn=yes&f=tag&s=create_time_DESC&p=%d",
+                 "https://" g_api_domain "/search/index.php?q=%s&syn=yes&f=tag&s=create_time_DESC&p=%d",
                  qenc, page);
     } else {
         snprintf(url, sizeof(url),
-                 "https://" DEFAULT_API_DOMAIN "/search/index.php?q=%s&syn=yes&f=_all&s=create_time_DESC&p=%d",
+                 "https://" g_api_domain "/search/index.php?q=%s&syn=yes&f=_all&s=create_time_DESC&p=%d",
                  qenc, page);
     }
 
     http_response r;
-    if (http_get(url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
         fprintf(stderr, "搜索请求失败(网络/TLS错误)\n");
         return 1;
     }
@@ -179,10 +186,10 @@ int cmd_detail(int argc, char **argv) {
     long id = atol(argv[2]);
     char url[256];
     snprintf(url, sizeof(url),
-             "https://" DEFAULT_API_DOMAIN "/photos-gallery-aid-%ld.html", id);
+             "https://" g_api_domain "/photos-gallery-aid-%ld.html", id);
 
     http_response r;
-    if (http_get(url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
         fprintf(stderr, "详情请求失败\n");
         return 1;
     }
@@ -206,10 +213,10 @@ int cmd_download(int argc, char **argv) {
 
     char gallery_url[256];
     snprintf(gallery_url, sizeof(gallery_url),
-             "https://" DEFAULT_API_DOMAIN "/photos-gallery-aid-%ld.html", id);
+             "https://" g_api_domain "/photos-gallery-aid-%ld.html", id);
 
     http_response r;
-    if (http_get(gallery_url, "https://" DEFAULT_API_DOMAIN "/", NULL, 5, &r) != 0) {
+    if (http_get(gallery_url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
         fprintf(stderr, "获取漫画页失败\n");
         return 1;
     }
@@ -270,6 +277,7 @@ int cmd_cover(int argc, char **argv) {
 }
 
 int main(int argc, char **argv) {
+    init_api_domain();
     if (argc < 2) { usage(argv[0]); return 1; }
     const char *cmd = argv[1];
     if (strcmp(cmd, "search") == 0)   return cmd_search(argc, argv, 0);

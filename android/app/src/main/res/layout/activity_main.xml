@@ -32,7 +32,24 @@
             android:layout_height="wrap_content"
             android:text="@string/run"
             android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/settings"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/settings"
+            android:textSize="15sp" />
     </LinearLayout>
+
+    <!-- current mirror domain (tap 设置 to change) -->
+    <TextView
+        android:id="@+id/domain_bar"
+        android:layout_width="fill_parent"
+        android:layout_height="wrap_content"
+        android:textSize="11sp"
+        android:typeface="monospace"
+        android:textColor="#888888"
+        android:layout_marginTop="2dp" />
 
     <!-- status / progress bar (hidden until a download runs) -->
     <LinearLayout

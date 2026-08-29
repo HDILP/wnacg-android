@@ -66,4 +66,12 @@ int http_get(const char *url, const char *referer, const char *cookie,
 
 void free_http_response(http_response *r);
 
+/* Runtime API domain. Initialized once from the WNACG_DOMAIN env var (set by
+ * the Java shell from its settings page); falls back to DEFAULT_API_DOMAIN
+ * (a compile-time macro) when the env var is empty. All URL builders in
+ * wnacg.c / webp_bmp.c must use this instead of the macro so the domain can be
+ * changed at runtime without recompiling. */
+extern const char *g_api_domain;
+void init_api_domain(void);
+
 #endif /* WNACG_NET_H */

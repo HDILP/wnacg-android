@@ -29,6 +29,8 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -89,9 +91,16 @@ public class MainActivity extends Activity {
 
     private enum Mode { LOG, RESULTS }
 
+    /* Settings: mirror domain is user-changeable (the default host can go down).
+     * Stored in SharedPreferences; pushed to the native binary via WNACG_DOMAIN. */
+    private static final String DEFAULT_DOMAIN = "www.wn09.shop";
+    private static final String PREFS_NAME = "wnacg_prefs";
+    private static final String KEY_DOMAIN = "domain";
+
     private TextView out;          // plain log (detail / errors / help)
     private Spinner verb;           // dropdown to pick the command verb
     private EditText cmd;           // argument box
+    private TextView domainBar;     // shows current mirror domain
     private ScrollView logScroll;
     private ScrollView resScroll;
     private LinearLayout results;  // structured card container
@@ -124,6 +133,13 @@ public class MainActivity extends Activity {
         statusText = (TextView) findViewById(R.id.status_text);
         progress = (ProgressBar) findViewById(R.id.progress);
         Button run = (Button) findViewById(R.id.run);
+        domainBar = (TextView) findViewById(R.id.domain_bar);
+        Button settings = (Button) findViewById(R.id.settings);
+        refreshDomainBar();
+
+        settings.setOnClickListener(new Button.OnClickListener() {
+            public void onClick(android.view.View v) { showDomainDialog(); }
+        });
 
         // Verb dropdown. Labels and the command tokens they emit are kept in
         // string-arrays so they stay in sync. The "其他" entry emits an empty
@@ -318,6 +334,44 @@ public class MainActivity extends Activity {
 
     // ----------------------------------------------------------- command driver
 
+    private String domain() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString(KEY_DOMAIN, DEFAULT_DOMAIN);
+    }
+
+    private void refreshDomainBar() {
+        if (domainBar != null) domainBar.setText("镜像: " + domain());
+    }
+
+    /** Settings dialog: change the mirror domain (the default host can go down). */
+    private void showDomainDialog() {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setText(domain());
+        input.setHint(R.string.dialog_hint_domain);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_title_domain)
+                .setView(input)
+                .setPositiveButton(R.string.dialog_ok, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        String v = input.getText().toString().trim();
+                        if (v.length() == 0) {
+                            v = DEFAULT_DOMAIN;
+                            android.widget.Toast.makeText(MainActivity.this,
+                                    R.string.toast_domain_empty, android.widget.Toast.LENGTH_SHORT).show();
+                        }
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                                .putString(KEY_DOMAIN, v).commit();
+                        refreshDomainBar();
+                        android.widget.Toast.makeText(MainActivity.this,
+                                getString(R.string.toast_domain_saved, v),
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
+    }
+
     private String binaryPath() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             return extractLegacyBinary();
@@ -428,8 +482,12 @@ public class MainActivity extends Activity {
                     cmdArgs = args + " " + defaultDownloadDir();
                 }
                 try {
-                    String[] argv = (bin + " " + cmdArgs).split(" ");
-                    Process p = Runtime.getRuntime().exec(argv);
+                    List<String> cmdline = new java.util.ArrayList<String>();
+                    cmdline.add(bin);
+                    for (String t : (bin + " " + cmdArgs).split(" ")) cmdline.add(t);
+                    ProcessBuilder pb = new ProcessBuilder(cmdline);
+                    pb.environment().put("WNACG_DOMAIN", domain());
+                    Process p = pb.start();
                     new ReaderThread(p.getInputStream(), true).start();
                     new ReaderThread(p.getErrorStream(), true).start();
                     int rc = p.waitFor();
@@ -603,8 +661,15 @@ public class MainActivity extends Activity {
         if (target.exists()) return target;
         try {
             String bin = binaryPath();
-            Process p = Runtime.getRuntime().exec(new String[]{
-                    bin, "cover", String.valueOf(id), url, target.getAbsolutePath()});
+            List<String> cl = new ArrayList<String>();
+            cl.add(bin);
+            cl.add("cover");
+            cl.add(String.valueOf(id));
+            cl.add(url);
+            cl.add(target.getAbsolutePath());
+            ProcessBuilder pb = new ProcessBuilder(cl);
+            pb.environment().put("WNACG_DOMAIN", domain());
+            Process p = pb.start();
             new ReaderThread(p.getInputStream(), false).start();
             new ReaderThread(p.getErrorStream(), false).start();
             int r = p.waitFor();
