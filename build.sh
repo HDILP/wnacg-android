@@ -43,6 +43,15 @@ run_tests() {
     gcc -O0 -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
         -Isrc -I"$BS_INC" tests/parse_test.c src/html.c -o tests/parse_test
     ./tests/parse_test
+
+    echo "[test] WebP->BMP cover round-trip ..."
+    bash build-webp-host.sh
+    WEBP_A=thirdparty/libwebp/build-host/libwebp.a
+    WEBP_INC=thirdparty/libwebp/src
+    gcc -O2 -std=c99 -Isrc -I"$WEBP_INC" \
+        tests/webp_roundtrip.c src/bmp_write.c -o tests/webp_roundtrip \
+        "$WEBP_A" -lm
+    ./tests/webp_roundtrip
 }
 
 cmd="${1:-}"
