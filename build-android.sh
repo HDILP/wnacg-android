@@ -45,6 +45,8 @@ TC="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linu
 BS_DIR=thirdparty/bearssl-0.6
 BS_INC="$BS_DIR/inc"
 BS_LIB_ANDROID="$BS_DIR/build-android/libbearssl.a"
+WEBP_INC=thirdparty/libwebp/src
+WEBP_A=thirdparty/libwebp/build-android/libwebp.a
 OUT_DIR=android/app/src/main/jniLibs/armeabi
 OUT_LIB="$OUT_DIR/libwnacg.so"
 
@@ -58,6 +60,13 @@ if [ ! -f "$BS_LIB_ANDROID" ]; then
              CC="$TC-gcc --sysroot=$SYSROOT $SYSINC" \
              AR="$TC-ar" RANLIB="$TC-ranlib" \
              lib)
+fi
+
+# 1b) Cross-compile libwebp (decode only) for ARM — produces $WEBP_A.
+#     build-webp.sh fetches the source on demand and uses ndk-build.
+if [ ! -f "$WEBP_A" ]; then
+    echo "[android] compiling libwebp (arm, decode only) ..."
+    bash build-webp.sh
 fi
 
 # 2) Cross-compile the app as a PIE EXECUTABLE (not -shared!) named libwnacg.so.
@@ -80,10 +89,10 @@ echo "[android] compiling wnacg-legacy (ARMv5TE, non-PIE ET_EXEC) for API 9-15 .
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
-    -I"$BS_INC" \
-    src/net.c src/tls.c src/html.c src/wnacg.c \
+    -I"$BS_INC" -I"$WEBP_INC" \
+    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c \
     -o android/app/src/main/assets/wnacg-legacy \
-    -Wl,--start-group "$BS_LIB_ANDROID" -lc -lm -ldl -Wl,--end-group
+    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -Wl,--end-group
 "$TC-strip" android/app/src/main/assets/wnacg-legacy 2>/dev/null || true
 echo "[android] wrote android/app/src/main/assets/wnacg-legacy ($(wc -c < android/app/src/main/assets/wnacg-legacy) bytes)"
 
@@ -91,11 +100,11 @@ echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 -fPIE \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
-    -I"$BS_INC" \
-    src/net.c src/tls.c src/html.c src/wnacg.c \
+    -I"$BS_INC" -I"$WEBP_INC" \
+    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c \
     -o "$OUT_LIB" \
     -pie -fPIE \
-    -Wl,--start-group "$BS_LIB_ANDROID" -lc -lm -ldl -Wl,--end-group
+    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -Wl,--end-group
 
 "$TC-strip" "$OUT_LIB" 2>/dev/null || true
 echo "[android] wrote $OUT_LIB ($(wc -c < "$OUT_LIB") bytes)"

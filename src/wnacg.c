@@ -1,6 +1,7 @@
 #include "net.h"
 #include "tls.h"
 #include "html.h"
+#include "webp_bmp.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -263,7 +264,9 @@ int cmd_cover(int argc, char **argv) {
         fprintf(stderr, "无效封面 URL: %s\n", url);
         return 1;
     }
-    return download_image(url, argv[4]) == 0 ? 0 : 1;
+    /* save_image_auto re-encodes WebP covers to BMP so Android 2.3 (no WebP
+     * decoder in BitmapFactory) can still display them; PNG/JPEG pass through. */
+    return save_image_auto(url, argv[4]) == 0 ? 0 : 1;
 }
 
 int main(int argc, char **argv) {

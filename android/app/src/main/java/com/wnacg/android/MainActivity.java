@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
 
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads.
-        out.setText("wnacg v1.7\n");  // version stamp: confirms which build is installed
+        out.setText("wnacg v1.8\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
         showLogView();
 
@@ -502,7 +502,10 @@ public class MainActivity extends Activity {
             Matcher cm = COVER_LINE.matcher(line.trim());
             if (cm.matches()) {
                 final String url = cm.group(1);
-                if (url.startsWith("http") && Build.VERSION.SDK_INT >= 14) {
+                // Covers are now re-encoded to BMP by the native binary (WebP
+                // decoded server-side), so even API 9 (no WebP decoder in
+                // BitmapFactory) can display them. No SDK_INT guard needed.
+                if (url.startsWith("http")) {
                     final SearchCard card = curCard;
                     coversExec.execute(new Runnable() {
                         public void run() { fetchCoverInto(card, url); }
