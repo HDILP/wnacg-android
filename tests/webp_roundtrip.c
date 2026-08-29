@@ -14,8 +14,8 @@
 #include "webp/decode.h"   /* WebPDecodeRGBA */
 #include "png_write.h"     /* png_write_rgb */
 
-static int rd32(const unsigned char *p) {
-    return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+static int rd32be(const unsigned char *p) {
+    return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
 }
 
 int main(void) {
@@ -70,7 +70,7 @@ int main(void) {
         fprintf(stderr, "FAIL: missing IHDR\n");
         return 1;
     }
-    int pw = rd32(ihdr + 12), ph = rd32(ihdr + 16);
+    int pw = rd32be(ihdr + 12), ph = rd32be(ihdr + 16);
     if (pw != w || ph != h) {
         fprintf(stderr, "FAIL: PNG size %dx%d (want %dx%d)\n", pw, ph, w, h);
         return 1;
