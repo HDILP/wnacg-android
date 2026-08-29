@@ -57,6 +57,7 @@ wnacg search   <关键词...> [页码]         搜索漫画（全字段模糊，
 wnacg tag      <标签...>   [页码]         按标签搜索（f=tag；同样支持多词）
 wnacg download <漫画ID> [保存目录]      下载整本到目录（单线程）
 wnacg detail   <漫画ID>                 打印漫画详情（图数/标签）
+wnacg cover    <漫画ID> <URL> <输出文件>  下载单张图（壳内部用它拉封面缩略图）
 ```
 
 示例：
@@ -67,9 +68,16 @@ wnacg search 百合 汉化          # 多关键词：空格分隔，全部并入
 wnacg search 百合 汉化 2        # 最后一个纯数字参数视为页码
 wnacg download 257351          # 自动存到 /sdcard/downloads/257351（已授权时）
 wnacg download 257351 /sdcard/downloads   # 等价写法
+wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
 ```
 
-> 默认域名：`www.wn09.shop`（在 `src/wnacg.c`、`Makefile`、说明注释里各一处；改域名时三处一起改）。
+> 默认域名：`www.wn09.shop`（在 `src/wnacg.c`、`Makefile`、`build.sh`、`build-android.sh`
+> 四处各一处；改域名四处一起改）。
+
+> 网络健壮性：图片/封面 CDN（`img*.wnimg1.ru`、`t*.wnacgimg.date`，多为 Cloudflare）在部分
+> 大陆网络会被 SNI 过滤/TLS 指纹拦截，或 IPv6 半可用（connect 通但数据不通 → BearSSL
+> `BR_ERR_IO 0x001f`）。二进制内置两招：https 握手失败自动降级 http:// 重试一次（主站
+> 仍强制 https）；TCP 连接 IPv4 优先 + 单地址 5s 超时。这是 2026-08-29 真机实测的修复。
 
 > 关于 `tag`：旧版路由 `/albums-index-page-N-tag-X.html` 在当前移动站已失效（返回 200 但无结果），现改为走搜索接口的 `f=tag` 端点，返回结构与 `search` 一致。限制：站点对 `f=tag` 只返回第 1 页（第 2 页起服务端返回空），所以 `tag` 模式实际只能看第一页结果——这是站点行为，非解析 bug。需要更多结果时可改用 `search`。
 
@@ -78,7 +86,9 @@ wnacg download 257351 /sdcard/downloads   # 等价写法
 ## 本地开发 / 验证（桌面 gcc）
 
 桌面用 **同一份 C 源码 + 同一棵 BearSSL 树** 编译，保证「本机测的逻辑和安卓完全一致」——
-安卓版只是换了工具链（`arm-linux-androideabi-gcc`）并加 `-static`，没有第二条代码路径。
+安卓版只是换了工具链（`arm-linux-androideabi-gcc`）并加 `-pie`（另出一个非 PIE 变体给
+2.3），没有第二条代码路径。注意 bionic 没有静态 libc，安卓版是动态链接 libc.so 的
+（老设备上也必有 /system/lib/libc.so），不是 `-static`。
 
 ```bash
 # 1) 编译主机二进制 + 跑解析单测
@@ -94,19 +104,24 @@ wnacg download 257351 /sdcard/downloads   # 等价写法
 
 ## 交叉编译 + 打包 APK
 
-需要 **Android NDK r16b**（最后一个能干净支持 API 9 的 NDK；用 GCC 4.9 预编译 +
-`platforms/android-9`）和 **Android SDK**（build-tools 29.0.3 + `platforms;android-9`）。
+需要 **Android NDK r16b**（最后一个能干净支持 armeabi/API 9 的 NDK；用 GCC 4.9 预编译）
+和 **Android SDK**（build-tools 29.0.3 + `platforms;android-9` + `platforms;android-34`）。
+注意 r16b 没有 `platforms/android-9` 目录（最低 android-16），链接时用 android-16 的
+sysroot——PIE 正是 4.1 的门槛，非 PIE 的 2.3 变体不需要新版 sysroot 符号。
 
 ```bash
 export ANDROID_NDK_HOME=/path/to/android-ndk-r16b
 export ANDROID_HOME=/path/to/android-sdk
 
-./build-android.sh        # 交叉编译 -> android/app/src/main/jniLibs/armeabi/libwnacg.so
+./build-android.sh        # 交叉编译 -> jniLibs/armeabi/libwnacg.so (PIE, API16+)
+                          #            + assets/wnacg-legacy (非 PIE, API 9-15)
 ./packapk.sh              # aapt2 + d8 + apksigner -> android/app/build/outputs/wnacg.apk
 ```
 
 `packapk.sh` 不依赖 Android Gradle Plugin（AGP 早已不支持 API 9），直接驱动 SDK 的
-build-tools 命令行，用一次性 debug keystore 签名，产出的 apk 可直接 `adb install`。
+build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 keystore（存在则复用，
+不存在才生成）——CI 用 actions/cache 缓存同一 keystore（key: wnacg-debug-keystore-v1），
+保证每次产出的 APK 同证书、可覆盖安装不必卸载。默认密码是 debug 的 `android`，仅个人自用。
 
 ---
 
@@ -114,12 +129,16 @@ build-tools 命令行，用一次性 debug keystore 签名，产出的 apk 可�
 
 1. 拿到 `wnacg.apk`（自己编，或去 Actions 下载 artifact）。
 2. 设备开「未知来源」安装：`设置 → 应用程序 → 未知来源`。
-3. `adb install wnacg.apk`（或拷到 sdcard 用文件管理器点装）。
-4. 打开 app，输入框里直接打 `download 257351`，点「运行」。授权「所有文件访问」后，
-   图片会自动存到 `/sdcard/downloads/257351/0001.webp ...`（不写路径即走固定目录；
-   也可手动指定 `download 257351 /sdcard/downloads`）。
-5. 也可以 `adb shell` 进到 app 的 native 目录直接跑 `./libwnacg.so`（路径由
-   `getApplicationInfo().nativeLibraryDir` 给出，2.3/16 通用）。
+3. `adb install -r wnacg.apk`（或拷到 sdcard 用文件管理器点装；同证书可覆盖安装）。
+4. 打开 app：顶部显示 `wnacg v1.5`（版本戳，确认装的是最新包）。输入框里直接打
+   `download 257351`，点「运行」；授权「所有文件访问」后，图片会自动存到
+   `/sdcard/downloads/257351/0001.webp ...`（不写路径即走固定目录；也可手动指定
+   `download 257351 /sdcard/downloads`）。
+5. 搜索/标签结果带封面缩略图（API 14+；2.3 无 WebP 解码，封面行按文字显示）。
+   封面经原生二进制的 `cover <id> <url> <path>` 子命令下载（享受 TLS 降级 + IPv4 优先
+   修复），缓存在 `cacheDir/covers/`。
+6. `adb shell` 也可直接跑二进制：API 16+ 在 `nativeLibraryDir` 跑 `./libwnacg.so`；
+   API 9–15 用 filesDir 里的 `wnacg-legacy`。
 
 > 存储权限：manifest 已声明 `INTERNET`、`WRITE_EXTERNAL_STORAGE`（API 9 是安装期权限，
 > 不需运行时弹窗）、`MANAGE_EXTERNAL_STORAGE`（maxSdk 35；Android 16/API 36 会拒收这个
@@ -132,15 +151,17 @@ build-tools 命令行，用一次性 debug keystore 签名，产出的 apk 可�
 
 ```
 src/
-  wnacg.c   命令行主程序：search/tag/detail/download + URL 编码
+  wnacg.c   命令行主程序：search/tag/detail/download/cover + URL 编码
   html.c    HTML 解析：搜索结果列表 + imglist（含 fast_img_host 变量替换）
-  net.c     HTTP GET、流式分块/定长读取、换行 reader
+  net.c     HTTP GET、TLS降级/重定向、IPv4优先+5s超时连接、流式读取
   tls.c     BearSSL 客户端封装（手动驱动引擎，关闭证书校验）
 thirdparty/bearssl-0.6/    BearSSL 0.6（静态库，主机+安卓各编一份）
 tests/                  样例 HTML 解析单测（parse_test.c + 样例）
-android/app/src/main/   Java 壳（minSdk=9）+ manifest + resources + jniLibs/armeabi/libwnacg.so
+android/app/src/main/   Java 壳（minSdk=9）+ manifest + resources
+                        + jniLibs/armeabi/libwnacg.so（PIE，API 16+）
+                        + assets/wnacg-legacy（非 PIE，API 9–15）
 build.sh / build-android.sh / packapk.sh   编译与打包脚本
-.github/workflows/      CI：ubuntu 上编 NDK/SDK + 出 apk artifact
+.github/workflows/      CI：ubuntu 上编 NDK/SDK、缓存 keystore、出 apk artifact
 ```
 
 ---
@@ -149,5 +170,7 @@ build.sh / build-android.sh / packapk.sh   编译与打包脚本
 
 - 单线程下载，大本较慢（2.3 设备本来也不适合并发）。
 - 证书不校验（见上）。如要开启，改 `src/tls.c` 的 x509 校验回调。
-- 仅验证过 `www.wn09.shop`；换镜像站需同步改三处域名宏。
+- 仅验证过 `www.wn09.shop`；换镜像站需同步改四处域名宏（src/wnacg.c、Makefile、build.sh、build-android.sh）。
 - NDK r16b 是硬依赖；更老的 NDK 缺 armeabi，更新的 NDK 抬高了最低 API。
+- 封面缩略图只支持 API 14+（WebP 解码能力）；2.3/3.x 上封面按文字显示，无法内联图片。
+- 站点 `f=tag` 只返回第 1 页（翻页为空），属站点行为（见上文 tag 说明）。
