@@ -5,12 +5,19 @@ import android.os.Bundle;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.ImageView;
+import android.widget.ProgressBar;
+import android.widget.ScrollView;
+import android.widget.LinearLayout;
 import android.util.Log;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.text.Spannable;
 import android.text.SpannableStringBuilder;
 import android.text.style.ImageSpan;
+import android.view.ViewGroup;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -31,7 +38,7 @@ import android.os.Environment;
 import android.provider.Settings;
 
 /**
- * Minimal shell for the native wnacg binary.
+ * GUI shell for the native wnacg binary.
  *
  * The C binary is compiled as a shared object named libwnacg.so and packaged as a
  * native library under jniLibs/. At install time the system extracts it into the
@@ -41,41 +48,61 @@ import android.provider.Settings;
  * 2.3 through 16.
  *
  * The binary links BearSSL statically and does its own TLS, so it works on
- * Android 2.3 (API 9) where the system SSL is hopelessly dated. Certificate
- * validation is OFF in the binary by default (the site's CA chain is not in the
- * 2010 trust store); pragmatic trade-off for a download tool, documented in the
- * README.
+ * Android 2.3 (API 9) where the system SSL is hopelessly dated.
  *
- * Search output is streamed to the TextView live; each "封面: <url>" line the C
- * binary prints becomes a placeholder that is swapped for an inline thumbnail as
- * soon as it is downloaded (through the SAME native binary so the TLS/IPv4 fixes
- * apply, cached in the app cache dir). Everything else streams through
- * verbatim, so download progress stays live too.
+ * Two render modes:
+ *  - SEARCH / DOWNLOAD commands stream into a structured view:
+ *      * search/tag  -> a card per result (cover thumbnail + title + meta + a
+ *                       "下载" button that fires `download <id>`).
+ *      * download    -> a live horizontal progress bar + "N/M" counter, parsed
+ *                       from the binary's "(N/M) 0001" progress lines.
+ *  - everything else (detail / usage / errors) streams into the plain log view.
+ *
+ * All stdout/stderr keep streaming live (no buffering) — results appear as they
+ * arrive, covers pop in as each fetch completes.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "wnacg";
     private static final String LIB_NAME = "wnacg";   // -> libwnacg.so
-    /** Unique placeholder swapped for a cover thumbnail when it arrives.
-     *  Each cover line gets a DISTINCT token (▣N▣, N = global sequence), so
-     *  replacements always match the exact slot — earlier failures or out-of-
-     *  order completions can never shift a later image to the wrong row. */
-    private static final char COVER_TOKEN = '\u25A3'; // ▣
-    private static final String TOKEN_FMT = "\u25A3%d\u25A3"; // ▣N▣
-    /** Cover thumbnail target height in dp. */
+    /** Cover thumbnail target height in dp. Confirmed 500 by the user ("500够了"). */
     private static final int THUMB_H_DP = 500;
     private static final Pattern COVER_LINE =
             Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
     private static final Pattern NUM_RUN = Pattern.compile("\\d+");
+    private static final Pattern SEARCH_HEADER =
+            Pattern.compile("^(搜索|标签)\\s*「(.+?)」\\s*第\\s*(\\d+)/(\\d+)\\s*页");
+    private static final Pattern SEARCH_ITEM =
+            Pattern.compile("^\\s*(\\d+)\\.\\s*(.*)$");
+    private static final Pattern ID_LINE =
+            Pattern.compile("^\\s*ID:\\s*(\\d+)(.*)$");
+    private static final Pattern DOWNLOAD_LINE =
+            Pattern.compile("^\\s*下载:\\s*download\\s+(\\d+)\\s*$");
+    private static final Pattern DL_BEGIN =
+            Pattern.compile("^开始下载\\s*漫画\\s*(\\d+):\\s*(\\d+)\\s*张");
+    private static final Pattern DL_PROGRESS =
+            Pattern.compile("^\\s*\\((\\d+)/(\\d+)\\)");
 
-    private TextView out;
+    private enum Mode { LOG, RESULTS }
+
+    private TextView out;          // plain log (detail / errors / help)
     private EditText cmd;
+    private ScrollView logScroll;
+    private ScrollView resScroll;
+    private LinearLayout results;  // structured card container
+    private LinearLayout statusbar;
+    private TextView statusText;
+    private ProgressBar progress;
+
+    private Mode mode = Mode.LOG;
     // Serialize native commands: one at a time, results keep their order.
     private final ExecutorService exec = Executors.newSingleThreadExecutor();
     // Cover fetches run off the command queue so they start immediately while
-    // the search is still printing. Token index is global (never reset), so a
-    // failed cover can't shift later replacements.
+    // the search is still printing.
     private final ExecutorService coversExec = Executors.newFixedThreadPool(2);
-    private int coverSeq = 0;
+    // Current search card being built from streamed lines (null outside search).
+    private SearchCard curCard = null;
+    // Total image count for an in-progress download (for the progress bar max).
+    private int dlTotal = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,13 +111,19 @@ public class MainActivity extends Activity {
 
         cmd = (EditText) findViewById(R.id.cmd);
         out = (TextView) findViewById(R.id.output);
+        logScroll = (ScrollView) findViewById(R.id.logscroll);
+        resScroll = (ScrollView) findViewById(R.id.scroll);
+        results = (LinearLayout) findViewById(R.id.results);
+        statusbar = (LinearLayout) findViewById(R.id.statusbar);
+        statusText = (TextView) findViewById(R.id.status_text);
+        progress = (ProgressBar) findViewById(R.id.progress);
         Button run = (Button) findViewById(R.id.run);
 
         // On first launch (Android 11+), open the All-Files-Access grant page so
-        // downloads can go to /sdcard/downloads. The toggle lives on the app-info
-        // page, not the empty "权限管理" list — we explain that in the output box.
-        out.setText("wnacg v1.6\n");  // version stamp: confirms which build is installed
+        // downloads can go to /sdcard/downloads.
+        out.setText("wnacg v1.7\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
+        showLogView();
 
         run.setOnClickListener(new Button.OnClickListener() {
             public void onClick(android.view.View v) {
@@ -108,14 +141,137 @@ public class MainActivity extends Activity {
         coversExec.shutdownNow();
     }
 
-    /** Resolve the on-disk binary path.
-     *  API 16+ : PIE executable shipped as libwnacg.so in nativeLibraryDir —
-     *            the only exec-allowed path on Android 10+, and the 4.1 (API
-     *            16) linker is the first that supports PIE at all.
-     *  API 9–15: Gingerbread's linker cannot load PIE binaries (exit code 11 /
-     *            SIGSEGV), but old systems have no exec-path restriction, so
-     *            we run the classic non-PIE binary shipped in assets/,
-     *            extracted to filesDir. */
+    // ---------------------------------------------------------------- view mux
+
+    /** Switch to the structured (card / progress) view. */
+    private void showResultsView() {
+        logScroll.setVisibility(android.view.View.GONE);
+        resScroll.setVisibility(android.view.View.VISIBLE);
+    }
+
+    /** Switch to the plain log view (detail / usage / errors). */
+    private void showLogView() {
+        resScroll.setVisibility(android.view.View.GONE);
+        logScroll.setVisibility(android.view.View.VISIBLE);
+        statusbar.setVisibility(android.view.View.GONE);
+    }
+
+    private int dp(int v) {
+        return (int) (v * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    // ------------------------------------------------------------- card helper
+
+    /** One search result rendered as a rounded card. */
+    private class SearchCard {
+        final LinearLayout root;
+        final ImageView cover;
+        final TextView title;
+        final TextView meta;
+        final Button dlBtn;
+        long id = -1;
+        boolean coverPlaced = false;
+
+        SearchCard() {
+            root = new LinearLayout(MainActivity.this);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setPadding(dp(8), dp(8), dp(8), dp(8));
+            root.setBackgroundDrawable(cardBg());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.FILL_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.setMargins(0, 0, 0, dp(6));
+            root.setLayoutParams(lp);
+
+            cover = new ImageView(MainActivity.this);
+            cover.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            cover.setVisibility(android.view.View.GONE);
+            root.addView(cover);
+
+            title = new TextView(MainActivity.this);
+            title.setTextSize(15);
+            title.setTextColor(Color.parseColor("#303030"));
+            title.setPadding(0, dp(4), 0, 0);
+            root.addView(title);
+
+            meta = new TextView(MainActivity.this);
+            meta.setTextSize(12);
+            meta.setTextColor(Color.parseColor("#777777"));
+            root.addView(meta);
+
+            dlBtn = new Button(MainActivity.this);
+            dlBtn.setText("下载");
+            dlBtn.setTextSize(13);
+            LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            blp.setMargins(0, dp(6), 0, 0);
+            dlBtn.setLayoutParams(blp);
+            dlBtn.setOnClickListener(new android.view.View.OnClickListener() {
+                public void onClick(android.view.View v) {
+                    if (id > 0) execNative("download " + id);
+                }
+            });
+            root.addView(dlBtn);
+        }
+
+        /** Place a decoded cover bitmap, clamped to the card width, 500dp tall. */
+        void setCover(Bitmap bmp) {
+            if (bmp == null) return;
+            float density = getResources().getDisplayMetrics().density;
+            int availW = results.getWidth() - results.getPaddingLeft()
+                       - results.getPaddingRight();
+            if (availW <= 0) {
+                availW = (int) (getWindowManager().getDefaultDisplay().getWidth()
+                                - 12 * density);
+            }
+            int h = (int) (THUMB_H_DP * density + 0.5f);
+            int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
+            if (availW > 0 && w > availW) {
+                w = availW;
+                h = Math.max(1, w * bmp.getHeight() / bmp.getWidth());
+            }
+            Bitmap small;
+            try {
+                small = Bitmap.createScaledBitmap(bmp, w, h, true);
+            } catch (OutOfMemoryError e) {
+                meta.setText(meta.getText() + "  (封面过大)");
+                return;
+            }
+            cover.setLayoutParams(new LinearLayout.LayoutParams(w, h));
+            cover.setImageBitmap(small);
+            cover.setVisibility(android.view.View.VISIBLE);
+            coverPlaced = true;
+        }
+
+        void setCoverFallback(String text) {
+            meta.setText(meta.getText() + "  " + text);
+        }
+    }
+
+    private GradientDrawable cardBg() {
+        GradientDrawable d = new GradientDrawable();
+        d.setColor(Color.parseColor("#FFF8FA"));
+        d.setCornerRadius(dp(8));
+        d.setStroke(1, Color.parseColor("#FFD6DE"));
+        return d;
+    }
+
+    private void addInfoLine(final String text) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                if (mode != Mode.RESULTS) return;
+                TextView t = new TextView(MainActivity.this);
+                t.setTextSize(13);
+                t.setTypeface(android.graphics.Typeface.MONOSPACE);
+                t.setText(text);
+                results.addView(t);
+            }
+        });
+    }
+
+    // ----------------------------------------------------------- command driver
+
     private String binaryPath() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             return extractLegacyBinary();
@@ -124,10 +280,6 @@ public class MainActivity extends Activity {
         return lib.getAbsolutePath();
     }
 
-    /** Copy assets/wnacg-legacy (non-PIE, for API 9–15) into filesDir and make
-     *  it executable. Gingerbread's linker can't run the PIE libwnacg.so, but
-     *  pre-API-16 Android allows exec from the app-private dir. Returns the
-     *  executable path, falling back to the PIE path if extraction failed. */
     private String extractLegacyBinary() {
         File exe = new File(getFilesDir(), "wnacg-legacy");
         if (!exe.exists()) {
@@ -151,47 +303,31 @@ public class MainActivity extends Activity {
                         "lib" + LIB_NAME + ".so").getAbsolutePath();
     }
 
-    /** Open the system "All Files Access" grant page so the user can enable
-     *  MANAGE_EXTERNAL_STORAGE. On Android 11+ this is a special-app permission;
-     *  ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION jumps straight to the per-app
-     *  "所有文件访问权限" toggle (it lives on the app-info page, NOT in the
-     *  runtime "权限管理" list — that list only shows normal permissions, which
-     *  is why it looks empty). If that dedicated page isn't exposed we fall back
-     *  to the general app-info page; the toggle is still there, just scroll down. */
     private void requestStorageAccess() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return; // API 29 and below: not needed
         if (Environment.isExternalStorageManager()) return;       // already granted
-        append("正在打开「所有文件访问」授权页…\n");
-        append("(该开关在应用信息页里, 不在「权限管理」列表; 若打开的是应用属性页, 请往下滑找「所有文件访问权限」并开启)\n");
-        append("(ColorOS/OPPO 等系统可能不显示该开关: 去 设置→搜索「所有文件访问」→ 点进 wnacg 开启)\n");
+        appendLog("正在打开「所有文件访问」授权页…\n");
+        appendLog("(该开关在应用信息页里, 不在「权限管理」列表; 若打开的是应用属性页, 请往下滑找「所有文件访问权限」并开启)\n");
+        appendLog("(ColorOS/OPPO 等系统可能不显示该开关: 去 设置→搜索「所有文件访问」→ 点进 wnacg 开启)\n");
         try {
             Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
             intent.setData(Uri.parse("package:" + getPackageName()));
             startActivity(intent);
         } catch (Exception e1) {
-            // dedicated page not exposed — fall back to app-info page
             try {
                 Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                 intent.setData(Uri.parse("package:" + getPackageName()));
                 startActivity(intent);
             } catch (Exception e2) {
-                append("无法自动打开授权页: " + e1.getMessage() + "\n可手动去 设置→应用→wnacg→所有文件访问权限 开启\n");
+                appendLog("无法自动打开授权页: " + e1.getMessage() + "\n可手动去 设置→应用→wnacg→所有文件访问权限 开启\n");
             }
         }
     }
 
-    /** Pick where `download <id>` should save when the user gave no path.
-     *  The native binary itself appends /<id> to whatever base dir we pass, so we
-     *  just return the BASE dir here.
-     *  Fixed path /sdcard/downloads on every Android version (API 9 included:
-     *  WRITE_EXTERNAL_STORAGE is install-time there, no prompt). On Android 11+
-     *  this needs the All-Files access grant; if that isn't granted we fall back
-     *  to the app-private dir so the download still succeeds. */
     private static final String FIXED_BASE_DIR = "/sdcard/downloads";
     private String defaultDownloadDir() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             !Environment.isExternalStorageManager()) {
-            // Android 11+ without the All-Files grant: can't write /sdcard/downloads.
             File ext = getExternalFilesDir(null);
             if (ext != null) return ext.getAbsolutePath();
             return getFilesDir().getAbsolutePath();
@@ -200,22 +336,47 @@ public class MainActivity extends Activity {
     }
 
     private void execNative(final String args) {
+        // Pick the render mode from the command, on the UI thread.
+        final String[] tok = args.trim().split("\\s+");
+        final String verb = (tok.length >= 1) ? tok[0] : "";
+        if (verb.equals("search") || verb.equals("tag")) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    mode = Mode.RESULTS;
+                    curCard = null;
+                    results.removeAllViews();
+                    statusbar.setVisibility(android.view.View.GONE);
+                    showResultsView();
+                }
+            });
+        } else if (verb.equals("download")) {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    mode = Mode.RESULTS;
+                    statusbar.setVisibility(android.view.View.VISIBLE);
+                    progress.setProgress(0);
+                    statusText.setText("准备下载…");
+                    showResultsView();
+                }
+            });
+        } else {
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    mode = Mode.LOG;
+                    showLogView();
+                }
+            });
+        }
+
         exec.execute(new Runnable() {
             public void run() {
                 String bin = binaryPath();
-                // Auto-append a default download dir for `download <id>` so the user
-                // never has to remember a path. Only when no extra arg is present.
                 String cmdArgs = args;
-                String[] tok = args.trim().split("\\s+");
                 if (tok.length >= 1 && tok[0].equals("download") && tok.length == 2) {
-                    // On Android 11+, if All-Files access isn't granted yet, open the
-                    // system grant page (the real "所有文件访问" toggle) BEFORE running,
-                    // so the user can enable it; this run still falls back to the
-                    // app-private dir, the next run lands in /sdcard/downloads.
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
                         !Environment.isExternalStorageManager()) {
-                        append("未授予「所有文件访问」权限, 正在打开授权页…\n");
-                        append("请在该页面找到「所有文件访问权限」(或「允许管理所有文件」)并开启, 返回后重跑 download\n");
+                        appendLog("未授予「所有文件访问」权限, 正在打开授权页…\n");
+                        appendLog("请在该页面找到「所有文件访问权限」(或「允许管理所有文件」)并开启, 返回后重跑 download\n");
                         requestStorageAccess();
                     }
                     cmdArgs = args + " " + defaultDownloadDir();
@@ -223,75 +384,139 @@ public class MainActivity extends Activity {
                 try {
                     String[] argv = (bin + " " + cmdArgs).split(" ");
                     Process p = Runtime.getRuntime().exec(argv);
-                    // stream stdout + stderr concurrently so we never deadlock;
-                    // stdout may contain cover lines (intercepted), stderr is
-                    // shown verbatim (errors must never be swallowed)
-                    new ReaderThread(p.getInputStream(), true, true).start();
-                    new ReaderThread(p.getErrorStream(), true, false).start();
+                    new ReaderThread(p.getInputStream(), true).start();
+                    new ReaderThread(p.getErrorStream(), true).start();
                     int rc = p.waitFor();
-                    append("\n[进程退出码: " + rc + "]\n");
+                    if (mode == Mode.RESULTS && verb.equals("download")) {
+                        setStatus("下载结束 [进程退出码: " + rc + "]");
+                    } else if (mode == Mode.LOG) {
+                        appendLog("\n[进程退出码: " + rc + "]\n");
+                    } else {
+                        addInfoLine("[进程退出码: " + rc + "]");
+                    }
                 } catch (IOException e) {
-                    append("执行失败: " + e.getMessage() + "\n");
+                    if (mode == Mode.LOG) appendLog("执行失败: " + e.getMessage() + "\n");
+                    else setStatus("执行失败: " + e.getMessage());
                 } catch (InterruptedException e) {
-                    append("被中断\n");
+                    if (mode == Mode.LOG) appendLog("被中断\n");
+                    else setStatus("被中断");
                 }
             }
         });
     }
 
-    /** Handles one output line. Returns true if the line was a "封面:" line
-     *  (a placeholder + async cover fetch was queued). Called from the native
-     *  command's reader thread, so appends keep their display order.
-     *  API < 14 (Android 2.3/3.x): BitmapFactory has NO WebP support (added in
-     *  API 14), so inline covers are impossible — swallow the line entirely so
-     *  the search result doesn't get a useless "封面: <url>" text row. */
-    private boolean handleStreamLine(final String line) {
-        Matcher m = COVER_LINE.matcher(line.trim());
-        if (!m.matches()) return false;
-        final String url = m.group(1);
-        if (!url.startsWith("http")) return false;
-        if (Build.VERSION.SDK_INT < 14) return true; // swallow cover line on 2.3/3.x
-        final int idx = coverSeq++;
-        final String token = String.format(TOKEN_FMT, idx); // ▣N▣
-        append(token + "\n");
-        coversExec.execute(new Runnable() {
-            public void run() {
-                final File f = fetchCover(url);
-                if (f == null) {
-                    replaceTokenText(idx, "(封面获取失败)");
-                    return;
+    // ------------------------------------------------------------- line routing
+
+    /** Parse one streamed stdout/stderr line into the active view. */
+    private void handleLine(final String line) {
+        if (mode == Mode.LOG) {
+            appendLog(line + "\n");
+            return;
+        }
+        // RESULTS mode: search cards or download progress.
+        // --- download progress ---
+        Matcher db = DL_BEGIN.matcher(line);
+        if (db.find()) {
+            dlTotal = Integer.parseInt(db.group(2));
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    statusbar.setVisibility(android.view.View.VISIBLE);
+                    progress.setMax(Math.max(1, dlTotal));
+                    progress.setProgress(0);
+                    statusText.setText(line.trim());
                 }
-                final Bitmap bmp = decodeScaled(f);
-                if (bmp == null) {
-                    replaceTokenText(idx, "(封面解码失败)");
-                    return;
+            });
+            return;
+        }
+        Matcher dp = DL_PROGRESS.matcher(line);
+        if (dp.find()) {
+            final int cur = Integer.parseInt(dp.group(1));
+            final int tot = Integer.parseInt(dp.group(2));
+            runOnUiThread(new Runnable() {
+                public void run() {
+                    statusbar.setVisibility(android.view.View.VISIBLE);
+                    progress.setMax(Math.max(1, tot));
+                    progress.setProgress(cur);
+                    statusText.setText("下载中 " + cur + "/" + tot);
                 }
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        final float density = getResources().getDisplayMetrics().density;
-                        // Target height THUMB_H_DP, width follows aspect — BUT
-                        // clamp to the TextView's usable width so the image can
-                        // never overflow its line and overlap nearby text.
-                        int availW = out.getWidth() - out.getPaddingLeft() - out.getPaddingRight();
-                        int h = (int) (THUMB_H_DP * density + 0.5f);
-                        int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
-                        if (availW > 0 && w > availW) {
-                            w = availW;
-                            h = Math.max(1, w * bmp.getHeight() / bmp.getWidth());
-                        }
-                        applyCoverAt(String.format(TOKEN_FMT, idx), bmp, w, h);
-                    }
-                });
+            });
+            return;
+        }
+        if (line.startsWith("完成:") || line.matches(".*成功\\s*\\d+.*失败\\s*\\d+.*")) {
+            setStatus(line.trim());
+            runOnUiThread(new Runnable() {
+                public void run() { progress.setProgress(progress.getMax()); }
+            });
+            return;
+        }
+        // --- search cards ---
+        Matcher sh = SEARCH_HEADER.matcher(line);
+        if (sh.find()) {
+            curCard = null;
+            addInfoLine(line.trim());
+            return;
+        }
+        Matcher si = SEARCH_ITEM.matcher(line);
+        if (si.find()) {
+            curCard = new SearchCard();
+            curCard.title.setText(si.group(2).trim());
+            runOnUiThread(new Runnable() {
+                public void run() { results.addView(curCard.root); }
+            });
+            return;
+        }
+        if (curCard != null) {
+            Matcher idm = ID_LINE.matcher(line);
+            if (idm.find()) {
+                try { curCard.id = Long.parseLong(idm.group(1)); } catch (NumberFormatException e) {}
+                String extra = idm.group(2).trim();
+                if (extra.length() > 0) curCard.meta.setText(extra);
+                return;
             }
+            Matcher cm = COVER_LINE.matcher(line.trim());
+            if (cm.matches()) {
+                final String url = cm.group(1);
+                if (url.startsWith("http") && Build.VERSION.SDK_INT >= 14) {
+                    final SearchCard card = curCard;
+                    coversExec.execute(new Runnable() {
+                        public void run() { fetchCoverInto(card, url); }
+                    });
+                }
+                return;
+            }
+            Matcher dm = DOWNLOAD_LINE.matcher(line.trim());
+            if (dm.matches()) {
+                // id already set from the ID line; nothing else to do.
+                return;
+            }
+        }
+        // Anything else in RESULTS mode (notes, errors) -> info line.
+        // Swallow the horizontal separator line so it doesn't clutter the cards.
+        String t = line.trim();
+        if (!t.isEmpty() && !t.matches("^[─\\-—]+$")) addInfoLine(t);
+    }
+
+    /** Download a cover through the native binary and place it in the card. */
+    private void fetchCoverInto(final SearchCard card, String url) {
+        final File f = fetchCover(url);
+        if (f == null) {
+            runOnUiThread(new Runnable() { public void run() { card.setCoverFallback("(封面获取失败)"); } });
+            return;
+        }
+        final Bitmap bmp = decodeScaled(f);
+        if (bmp == null) {
+            runOnUiThread(new Runnable() { public void run() { card.setCoverFallback("(封面解码失败)"); } });
+            return;
+        }
+        runOnUiThread(new Runnable() {
+            public void run() { card.setCover(bmp); }
         });
-        return true;
     }
 
     /** Download one cover through the native binary (same TLS/IPv4 fixes),
      *  cached under cacheDir/covers/<id>.<ext>. */
     private File fetchCover(String url) {
         long id = 0;
-        // comic id = longest numeric run in the URL (e.g. /data/371091/...)
         Matcher nm = NUM_RUN.matcher(url);
         while (nm.find()) {
             long v = 0;
@@ -300,7 +525,6 @@ public class MainActivity extends Activity {
         }
         File dir = new File(getCacheDir(), "covers");
         if (!dir.exists()) dir.mkdirs();
-        // keep the URL's extension so the decoder can sniff the format
         String ext = ".img";
         int dot = url.lastIndexOf('.');
         if (dot >= 0 && url.length() - dot <= 6) {
@@ -313,8 +537,8 @@ public class MainActivity extends Activity {
             String bin = binaryPath();
             Process p = Runtime.getRuntime().exec(new String[]{
                     bin, "cover", String.valueOf(id), url, target.getAbsolutePath()});
-            new ReaderThread(p.getInputStream(), false, false).start();
-            new ReaderThread(p.getErrorStream(), false, false).start();
+            new ReaderThread(p.getInputStream(), false).start();
+            new ReaderThread(p.getErrorStream(), false).start();
             int r = p.waitFor();
             return (r == 0 && target.exists()) ? target : null;
         } catch (IOException e) {
@@ -344,75 +568,34 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Replace the token ▣N▣ (exact unique match) with an image. Using the
-     *  unique token string means completion order and earlier failures can
-     *  never map an image onto the wrong row. Runs on the UI thread. */
-    private void applyCoverAt(final String token, final Bitmap bmp,
-                              final int w, final int h) {
-        CharSequence cur = out.getText();
-        if (!(cur instanceof SpannableStringBuilder)) return;
-        SpannableStringBuilder ss = (SpannableStringBuilder) cur;
-        int pos = ss.toString().indexOf(token);
-        if (pos < 0) return; // already replaced or cleared
-        final Bitmap small;
-        try {
-            small = Bitmap.createScaledBitmap(bmp, w, h, true);
-        } catch (OutOfMemoryError e) {
-            Log.w(TAG, "cover scale OOM");
-            ss.replace(pos, pos + token.length(), "(封面过大)");
-            return;
-        }
-        // swap the token for a wide space carrying the image
-        ss.replace(pos, pos + token.length(), " ");
-        ss.setSpan(new ImageSpan(small), pos, pos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-        // Without this the TextView keeps its stale layout and the image
-        // renders on top of the following text (results "叠在一起") until
-        // the next full redraw (app switch). Force re-measure + repaint.
-        out.invalidate();
-        out.requestLayout();
-    }
-
-    /** Replace the token ▣N▣ with a fallback text (fetch/decode failure). */
-    private void replaceTokenText(final int idx, final String text) {
-        final String token = String.format(TOKEN_FMT, idx);
+    private void setStatus(final String s) {
         runOnUiThread(new Runnable() {
             public void run() {
-                CharSequence cur = out.getText();
-                if (!(cur instanceof SpannableStringBuilder)) return;
-                SpannableStringBuilder ss = (SpannableStringBuilder) cur;
-                int pos = ss.toString().indexOf(token);
-                if (pos < 0) return;
-                ss.replace(pos, pos + token.length(), text);
-                out.invalidate();
-                out.requestLayout();
+                statusbar.setVisibility(android.view.View.VISIBLE);
+                statusText.setText(s);
             }
         });
     }
 
-    private void append(final String s) {
+    private void appendLog(final String s) {
         runOnUiThread(new Runnable() {
-            public void run() {
-                out.append(s);
-            }
+            public void run() { out.append(s); }
         });
     }
 
     private class ReaderThread extends Thread {
         final InputStream is;
-        final boolean appendLive;
-        final boolean interceptCovers;
-        ReaderThread(InputStream is, boolean appendLive, boolean interceptCovers) {
+        final boolean live;
+        ReaderThread(InputStream is, boolean live) {
             this.is = is;
-            this.appendLive = appendLive;
-            this.interceptCovers = interceptCovers;
+            this.live = live;
         }
         public void run() {
             try {
                 BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
                 String l;
                 while ((l = br.readLine()) != null) {
-                    if (appendLive && interceptCovers && handleStreamLine(l)) continue;
-                    if (appendLive) append(l + "\n");
+                    if (live) handleLine(l);
                 }
                 br.close();
             } catch (IOException e) {

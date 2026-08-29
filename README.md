@@ -7,7 +7,9 @@
 重写了搜索和单线程下载，编译成一个 **单文件静态原生二进制**，再用一个极薄的 Java 壳
 （`minSdk=9`）通过 `Runtime.exec` 调用它——**完全绕开 2.3 的系统 TLS 和 JNI**。
 
-> 功能范围：搜索、按标签搜索、下载整本。单线程、纯命令行逻辑（壳里套一个输入框即可）。
+> 功能范围：搜索、按标签搜索、下载整本。单线程、纯命令行逻辑，但 Java 壳已做成真 GUI：
+> `search`/`tag` 结果渲染成卡片（封面缩略图 + 标题 + 信息 + 一键下载按钮），`download`
+> 实时显示进度条与「N/M」计数，其余命令（detail / 用法 / 报错）走纯文字日志。
 
 **CI 自动出包**：仓库的 GitHub Actions 会在每次 push / 手动触发时，自动安装 NDK r16b + SDK（platform 9 / build-tools 29），交叉编译原生二进制、打包并签名 APK，产物以 artifact `wnacg-android-apk` 形式提供下载。
 
@@ -130,13 +132,15 @@ build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 ke
 1. 拿到 `wnacg.apk`（自己编，或去 Actions 下载 artifact）。
 2. 设备开「未知来源」安装：`设置 → 应用程序 → 未知来源`。
 3. `adb install -r wnacg.apk`（或拷到 sdcard 用文件管理器点装；同证书可覆盖安装）。
-4. 打开 app：顶部显示 `wnacg v1.6`（版本戳，确认装的是最新包）。输入框里直接打
+4. 打开 app：顶部显示 `wnacg v1.7`（版本戳，确认装的是最新包）。输入框里直接打
    `download 257351`，点「运行」；授权「所有文件访问」后，图片会自动存到
    `/sdcard/downloads/257351/0001.webp ...`（不写路径即走固定目录；也可手动指定
-   `download 257351 /sdcard/downloads`）。
-5. 搜索/标签结果带封面缩略图（API 14+）。2.3/3.x 无 WebP 解码，封面行被完全吞掉，
-   搜索输出是纯文字列表。封面经原生二进制的 `cover <id> <url> <path>` 子命令下载
-   （享受 TLS 降级 + IPv4 优先修复），缓存在 `cacheDir/covers/`。
+   `download 257351 /sdcard/downloads`）。下载时顶部显示横向进度条 + 「N/M」实时计数。
+5. 搜索/标签结果渲染成卡片：每张卡含封面缩略图（API 14+）、标题、ID/信息、以及
+   「下载」按钮（点了直接对该 ID 发起 `download`）。2.3/3.x 无 WebP 解码，封面行被
+   完全吞掉，搜索输出退化为纯文字列表（卡片仍在，只是没图）。封面经原生二进制的
+   `cover <id> <url> <path>` 子命令下载（享受 TLS 降级 + IPv4 优先修复），缓存在
+   `cacheDir/covers/`。
 6. `adb shell` 也可直接跑二进制：API 16+ 在 `nativeLibraryDir` 跑 `./libwnacg.so`；
    API 9–15 用 filesDir 里的 `wnacg-legacy`。
 
