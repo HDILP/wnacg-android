@@ -5,6 +5,9 @@
 #include <string.h>
 #include <ctype.h>
 
+/* defined in wnacg.c; runtime image-CDN host override (WNACG_IMG_HOST). */
+extern const char *g_img_host;
+
 /* ---------- small string helpers ---------- */
 
 static char *xstrndup(const char *s, size_t n) {
@@ -302,44 +305,18 @@ static int is_fake_img(const char *url) {
     return strstr(url, "shoucang.jpg") != NULL;
 }
 
-/* Extract the JS value of `var fast_img_host='...';` from the page, so we
- * can substitute it for the `fast_img_host+` token in imglist. Returns a
- * malloc'd string, or a default if not found (caller frees). */
+/* The site advertises its image host via `var fast_img_host='...';`, but the
+ * default value (img5.wnimg1.ru) is unreachable from many networks / 2.3
+ * BearSSL (Cloudflare blocks the non-browser TLS fingerprint). We ignore the
+ * page-provided host and always use the runtime override g_img_host, which
+ * defaults to webp.wnacgimg.date (serves the .w1280.webp variant, reachable)
+ * or the user-configured WNACG_IMG_HOST. */
 static char *extract_fast_img_host(const char *html, size_t hlen) {
-    const char *p = find_from(html, hlen, 0, "fast_img_host");
-    if (p) {
-        const char *eq = strchr(p, '=');
-        if (eq) {
-            const char *semi = strchr(eq, ';');
-            if (semi) {
-                /* Copy the raw token between '=' and ';' into a temp buffer,
-                 * then un-escape JS backslashes (the page emits \" for "). */
-                size_t rawlen = (size_t)(semi - (eq + 1));
-                char *raw = xstrndup(eq + 1, rawlen);
-                char *o = raw;
-                for (size_t k = 0; k < rawlen; k++) {
-                    if (raw[k] == '\\') continue; /* drop JS escape char */
-                    *o++ = raw[k];
-                }
-                *o = '\0';
-                /* trim whitespace */
-                char *s = raw;
-                char *e = o - 1;
-                while (s <= e && (*s == ' ' || *s == '\t')) s++;
-                while (e >= s && (*e == ' ' || *e == '\t')) e--;
-                /* strip one pair of surrounding quotes if present */
-                if (s <= e && (*s == '"' || *s == '\'')) {
-                    if (e > s && e[0] == s[0]) { s++; e--; }
-                    else s++;
-                }
-                size_t vlen = (size_t)(e - s + 1);
-                char *val = xstrndup(s, vlen > 0 ? vlen : 0);
-                free(raw);
-                return val;
-            }
-        }
-    }
-    return xstrdup("https://img5.wnimg.ru");
+    (void)html; (void)hlen;
+    size_t hl = strlen(g_img_host);
+    char *val = xstrdup(g_img_host);
+    (void)hl;
+    return val;
 }
 
 int parse_imglist(const char *html, char ***out_urls, int *out_count) {
@@ -435,6 +412,20 @@ int parse_imglist(const char *html, char ***out_urls, int *out_count) {
                 if (count >= cap) {
                     cap *= 2;
                     urls = realloc(urls, cap * sizeof(char *));
+                }
+                /* Request the .w1280.webp variant: the reachable image host
+                 * (webp.wnacgimg.date) only serves the transcoded .w1280.webp
+                 * variant, not the bare .webp path. Skip if already suffixed. */
+                size_t ul = strlen(url);
+                if (ul >= 5 && strcmp(url + ul - 5, ".webp") == 0 &&
+                    (ul < 13 || strcmp(url + ul - 13, ".w1280.webp") != 0)) {
+                    char *vu = malloc(ul + 9 + 1);
+                    if (vu) {
+                        memcpy(vu, url, ul);
+                        memcpy(vu + ul, ".w1280.webp", 10); /* includes NUL */
+                        free(url);
+                        url = vu;
+                    }
                 }
                 urls[count++] = url;
             } else {

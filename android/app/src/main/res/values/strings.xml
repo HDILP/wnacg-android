@@ -10,6 +10,11 @@
     <string name="dialog_cancel">取消</string>
     <string name="toast_domain_saved">已保存镜像域名: %s</string>
     <string name="toast_domain_empty">域名不能为空（恢复默认 www.wn09.shop）</string>
+    <string name="img_host">图床</string>
+    <string name="dialog_title_img_host">图床域名</string>
+    <string name="dialog_hint_img_host">例如 webp.wnacgimg.date（不要带 http://）</string>
+    <string name="toast_img_host_saved">已保存图床: %s</string>
+    <string name="toast_img_host_empty">域名不能为空（恢复默认 webp.wnacgimg.date）</string>
     <string name="output">输出</string>
 
     <!-- dropdown verbs: label shown in the spinner, and the command token it emits -->

@@ -96,6 +96,12 @@ public class MainActivity extends Activity {
     private static final String DEFAULT_DOMAIN = "www.wn09.shop";
     private static final String PREFS_NAME = "wnacg_prefs";
     private static final String KEY_DOMAIN = "domain";
+    /* Image CDN host (downloads + covers). The site's default fast_img_host
+     * (img5.wnimg1.ru) is unreachable from many networks / 2.3 BearSSL (Cloudflare
+     * blocks the non-browser TLS fingerprint), so we fall back to webp.wnacgimg.date
+     * which serves the .w1280.webp variant and is reachable. Overridable per-settings. */
+    private static final String DEFAULT_IMG_HOST = "webp.wnacgimg.date";
+    private static final String KEY_IMG_HOST = "img_host";
 
     private TextView out;          // plain log (detail / errors / help)
     private Spinner verb;           // dropdown to pick the command verb
@@ -139,6 +145,10 @@ public class MainActivity extends Activity {
 
         settings.setOnClickListener(new Button.OnClickListener() {
             public void onClick(android.view.View v) { showDomainDialog(); }
+        });
+        Button imgHostBtn = (Button) findViewById(R.id.img_host_btn);
+        imgHostBtn.setOnClickListener(new Button.OnClickListener() {
+            public void onClick(android.view.View v) { showImgHostDialog(); }
         });
 
         // Verb dropdown. Labels and the command tokens they emit are kept in
@@ -339,8 +349,14 @@ public class MainActivity extends Activity {
                 .getString(KEY_DOMAIN, DEFAULT_DOMAIN);
     }
 
+    private String imgHost() {
+        return getSharedPreferences(PREFS_NAME, MODE_PRIVATE)
+                .getString(KEY_IMG_HOST, DEFAULT_IMG_HOST);
+    }
+
     private void refreshDomainBar() {
-        if (domainBar != null) domainBar.setText("镜像: " + domain());
+        if (domainBar != null)
+            domainBar.setText("镜像: " + domain() + "   图床: " + imgHost());
     }
 
     /** Settings dialog: change the mirror domain (the default host can go down). */
@@ -372,6 +388,36 @@ public class MainActivity extends Activity {
                 .show();
     }
 
+    /** Settings dialog: change the image CDN host (the default fast_img_host
+     *  img5.wnimg1.ru is unreachable from many networks / 2.3 BearSSL; we fall
+     *  back to webp.wnacgimg.date which serves the .w1280.webp variant). */
+    private void showImgHostDialog() {
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setText(imgHost());
+        input.setHint(R.string.dialog_hint_img_host);
+        new android.app.AlertDialog.Builder(this)
+                .setTitle(R.string.dialog_title_img_host)
+                .setView(input)
+                .setPositiveButton(R.string.dialog_ok, new android.content.DialogInterface.OnClickListener() {
+                    public void onClick(android.content.DialogInterface d, int w) {
+                        String v = input.getText().toString().trim();
+                        if (v.length() == 0) {
+                            v = DEFAULT_IMG_HOST;
+                            android.widget.Toast.makeText(MainActivity.this,
+                                    R.string.toast_img_host_empty, android.widget.Toast.LENGTH_SHORT).show();
+                        }
+                        getSharedPreferences(PREFS_NAME, MODE_PRIVATE).edit()
+                                .putString(KEY_IMG_HOST, v).commit();
+                        refreshDomainBar();
+                        android.widget.Toast.makeText(MainActivity.this,
+                                getString(R.string.toast_img_host_saved, v),
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(R.string.dialog_cancel, null)
+                .show();
+    }
     private String binaryPath() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
             return extractLegacyBinary();
@@ -486,6 +532,7 @@ public class MainActivity extends Activity {
                     for (String t : (bin + " " + cmdArgs).split(" ")) cmdline.add(t);
                     ProcessBuilder pb = new ProcessBuilder(cmdline);
                     pb.environment().put("WNACG_DOMAIN", domain());
+                    pb.environment().put("WNACG_IMG_HOST", imgHost());
                     Process p = pb.start();
                     new ReaderThread(p.getInputStream(), true).start();
                     new ReaderThread(p.getErrorStream(), true).start();
@@ -668,6 +715,7 @@ public class MainActivity extends Activity {
             cl.add(target.getAbsolutePath());
             ProcessBuilder pb = new ProcessBuilder(cl);
             pb.environment().put("WNACG_DOMAIN", domain());
+            pb.environment().put("WNACG_IMG_HOST", imgHost());
             Process p = pb.start();
             new ReaderThread(p.getInputStream(), false).start();
             new ReaderThread(p.getErrorStream(), false).start();

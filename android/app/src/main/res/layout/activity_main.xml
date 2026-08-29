@@ -39,9 +39,16 @@
             android:layout_height="wrap_content"
             android:text="@string/settings"
             android:textSize="15sp" />
+
+        <Button
+            android:id="@+id/img_host_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/img_host"
+            android:textSize="15sp" />
     </LinearLayout>
 
-    <!-- current mirror domain (tap 设置 to change) -->
+    <!-- current mirror domain + image CDN host (tap buttons above to change) -->
     <TextView
         android:id="@+id/domain_bar"
         android:layout_width="fill_parent"
