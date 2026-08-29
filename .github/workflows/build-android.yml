@@ -80,6 +80,18 @@ jobs:
           fi
           ./build-android.sh
 
+      - name: Diagnose — can CI reach GitHub? (network probe)
+        run: |
+          set -eux
+          echo "=== curl -v github tarball ==="
+          curl -vSL --max-time 30 -o /tmp/webp.tar.gz \
+            https://github.com/webmproject/libwebp/archive/refs/tags/v1.3.2.tar.gz 2>&1 | tail -25 || echo "curl rc=$?"
+          echo "=== downloaded file ==="
+          ls -l /tmp/webp.tar.gz 2>/dev/null || echo "no file"
+          file /tmp/webp.tar.gz 2>/dev/null || true
+          echo "=== git ls-remote ==="
+          git ls-remote --heads https://github.com/webmproject/libwebp.git 2>&1 | head -5 || echo "ls-remote rc=$?"
+
       - name: Probe — cross-compile libwebp for armeabi (2.3 WebP support, early check)
         env:
           ANDROID_NDK_HOME: /opt/android-ndk-r16b
