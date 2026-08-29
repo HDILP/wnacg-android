@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
+#include <sys/select.h>
 #include <netdb.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -84,13 +86,43 @@ static int tcp_connect(const char *host, int port) {
     snprintf(portstr, sizeof(portstr), "%d", port);
     if (getaddrinfo(host, portstr, &hints, &res) != 0) return -1;
     int fd = -1;
-    for (ai = res; ai; ai = ai->ai_next) {
-        fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
-        if (fd < 0) continue;
-        /* 8s connect timeout-ish (blocking, acceptable for a CLI) */
-        if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) break;
-        close(fd);
-        fd = -1;
+    /* IPv4 first, then IPv6.  Many mobile networks have IPv6 that "connects"
+     * but cannot actually carry traffic (semi-tunneled/broken v6), which makes
+     * the TLS handshake hang until the 60s recv timeout -> BR_ERR_IO (0x001f).
+     * The main site resolves to A-only so it works; the Cloudflare image CDN
+     * advertises AAAA too and gets stuck on v6. Also bound each connect() with
+     * a 5s poll so one dead address can't stall the whole download. */
+    for (int pass = 0; pass < 2; pass++) {
+        for (ai = res; ai; ai = ai->ai_next) {
+            int fam = ai->ai_family;
+            if ((pass == 0 && fam != AF_INET) || (pass == 1 && fam != AF_INET6))
+                continue;
+            int s = socket(fam, ai->ai_socktype, ai->ai_protocol);
+            if (s < 0) continue;
+            /* non-blocking connect + 5s timeout */
+            int fl = fcntl(s, F_GETFL, 0);
+            fcntl(s, F_SETFL, fl | O_NONBLOCK);
+            int rc = connect(s, ai->ai_addr, ai->ai_addrlen);
+            if (rc != 0 && errno == EINPROGRESS) {
+                fd_set wf; FD_ZERO(&wf); FD_SET(s, &wf);
+                struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
+                rc = select(s + 1, NULL, &wf, NULL, &tv);
+                if (rc > 0) {
+                    int soerr = 0; socklen_t slen = sizeof(soerr);
+                    getsockopt(s, SOL_SOCKET, SO_ERROR, &soerr, &slen);
+                    rc = soerr ? -1 : 0;
+                } else {
+                    rc = -1; /* timeout */
+                }
+            }
+            if (rc == 0) {
+                fcntl(s, F_SETFL, fl); /* restore blocking */
+                fd = s;
+                break;
+            }
+            close(s);
+        }
+        if (fd >= 0) break;
     }
     if (res) freeaddrinfo(res);
     return fd;
