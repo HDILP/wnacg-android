@@ -43,8 +43,10 @@ static void url_encode(const char *src, char *dst, size_t dstcap) {
 
 /* Download a single image URL to the given path. Returns 0 on success. */
 static int download_image(const char *url, const char *out_path) {
+    char referer[128];
+    snprintf(referer, sizeof(referer), "https://%s/", g_api_domain);
     http_response r;
-    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
+    if (http_get(url, referer, NULL, 5, &r) != 0) {
         fprintf(stderr, "  [!] network error: %s\n", url);
         return -1;
     }
