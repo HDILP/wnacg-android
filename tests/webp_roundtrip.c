@@ -66,7 +66,7 @@ int main(void) {
         fprintf(stderr, "FAIL: bad PNG magic\n");
         return 1;
     }
-    if (ihdr[0] != 'I' || ihdr[1] != 'H' || ihdr[2] != 'D' || ihdr[3] != 'R') {
+    if (ihdr[4] != 'I' || ihdr[5] != 'H' || ihdr[6] != 'D' || ihdr[7] != 'R') {
         fprintf(stderr, "FAIL: missing IHDR\n");
         return 1;
     }
