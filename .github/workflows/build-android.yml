@@ -87,12 +87,10 @@ jobs:
           curl -fSL --connect-timeout 30 --max-time 300 -o /tmp/webp.tar.gz \
             https://github.com/webmproject/libwebp/archive/refs/tags/v1.3.2.tar.gz
           rm -rf /tmp/webp && mkdir -p /tmp/webp && tar xzf /tmp/webp.tar.gz -C /tmp/webp
-          echo "=== src/dec contents ==="
-          ls -la /tmp/webp/libwebp-1.3.2/src/dec/ 2>&1 | head -20
-          echo "=== decode.c present? ==="
-          ls -la /tmp/webp/libwebp-1.3.2/src/dec/decode.c 2>&1 || echo "NO decode.c"
-          echo "=== top-level build files ==="
-          ls -la /tmp/webp/libwebp-1.3.2/ | grep -iE 'android|autogen|configure|cmake|makefile'
+          echo "=== src tree (maxdepth 2) ==="
+          find /tmp/webp/libwebp-1.3.2/src -maxdepth 2 2>&1 | head -40
+          echo "=== count .c in src ==="
+          find /tmp/webp/libwebp-1.3.2/src -name '*.c' 2>&1 | wc -l
           echo "=== ndk-build available? ==="
           ls /opt/android-ndk-r16b/ndk-build 2>&1 || echo "NO ndk-build"
           echo "=== cmake available? ==="
