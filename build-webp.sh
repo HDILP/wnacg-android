@@ -27,14 +27,21 @@ if [ ! -f "$WEBP_DIR/src/dec/decode.c" ]; then
   for attempt in 1 2 3; do
     echo "[webp] clone attempt $attempt/3"
     rm -rf "$WEBP_DIR"
-    if git clone --depth 1 --branch "$WEBP_BRANCH" "$WEBP_URL" "$WEBP_DIR" >/dev/null 2>&1; then
+    # surface the real error (don't discard stderr) and cap the time so a hung
+    # connection fails fast instead of stalling the whole job.
+    if GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
+       git clone --depth 1 --branch "$WEBP_BRANCH" "$WEBP_URL" "$WEBP_DIR" \
+         2>clone_err.txt; then
       if [ -f "$WEBP_DIR/src/dec/decode.c" ]; then
         echo "[webp] clone OK"
         break
       fi
+    else
+      echo "[webp] clone failed (attempt $attempt):"; tail -5 clone_err.txt
     fi
     sleep 3
   done
+  rm -f clone_err.txt
   if [ ! -f "$WEBP_DIR/src/dec/decode.c" ]; then
     echo "[webp] ERROR: could not fetch libwebp source (GitHub unreachable?)"
     exit 1
