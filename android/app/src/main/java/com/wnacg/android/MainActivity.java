@@ -66,6 +66,8 @@ public class MainActivity extends Activity {
     private static final String LIB_NAME = "wnacg";   // -> libwnacg.so
     /** Cover thumbnail target height in dp. Confirmed 500 by the user ("500够了"). */
     private static final int THUMB_H_DP = 500;
+    /** Fixed card height in dp for the horizontal (left-cover / right-text) layout. */
+    private static final int CARD_H_DP = 120;
     private static final Pattern COVER_LINE =
             Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
     private static final Pattern NUM_RUN = Pattern.compile("\\d+");
@@ -162,7 +164,8 @@ public class MainActivity extends Activity {
 
     // ------------------------------------------------------------- card helper
 
-    /** One search result rendered as a rounded card. */
+    /** One search result rendered as a rounded horizontal card:
+     *  [cover | text column(title / meta / download)] with a fixed height. */
     private class SearchCard {
         final LinearLayout root;
         final ImageView cover;
@@ -170,78 +173,88 @@ public class MainActivity extends Activity {
         final TextView meta;
         final Button dlBtn;
         long id = -1;
-        boolean coverPlaced = false;
 
         SearchCard() {
+            float density = getResources().getDisplayMetrics().density;
+            final int cardH = (int) (CARD_H_DP * density + 0.5f);
+
             root = new LinearLayout(MainActivity.this);
-            root.setOrientation(LinearLayout.VERTICAL);
-            root.setPadding(dp(8), dp(8), dp(8), dp(8));
+            root.setOrientation(LinearLayout.HORIZONTAL);
+            root.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            root.setPadding(dp(8), dp(6), dp(8), dp(6));
             root.setBackgroundDrawable(cardBg());
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.FILL_PARENT,
-                    LinearLayout.LayoutParams.WRAP_CONTENT);
+                    LinearLayout.LayoutParams.FILL_PARENT, cardH);
             lp.setMargins(0, 0, 0, dp(6));
             root.setLayoutParams(lp);
 
+            // cover: fixed-height, fixed-width (derived from a 3:4 cover) so the
+            // row stays a uniform width; scale to fill (CENTER_CROP).
             cover = new ImageView(MainActivity.this);
-            cover.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
             cover.setVisibility(android.view.View.GONE);
+            final int coverW = (int) (cardH * 0.72f + 0.5f); // ~3:4 aspect
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(coverW, cardH);
+            clp.setMargins(0, 0, dp(8), 0);
+            cover.setLayoutParams(clp);
             root.addView(cover);
 
+            // text column takes the rest of the width.
+            LinearLayout textCol = new LinearLayout(MainActivity.this);
+            textCol.setOrientation(LinearLayout.VERTICAL);
+            textCol.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
+                    0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+            textCol.setLayoutParams(tlp);
+
             title = new TextView(MainActivity.this);
-            title.setTextSize(15);
+            title.setTextSize(14);
             title.setTextColor(Color.parseColor("#303030"));
-            title.setPadding(0, dp(4), 0, 0);
-            root.addView(title);
+            title.setMaxLines(2);
+            title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            textCol.addView(title);
 
             meta = new TextView(MainActivity.this);
-            meta.setTextSize(12);
+            meta.setTextSize(11);
             meta.setTextColor(Color.parseColor("#777777"));
-            root.addView(meta);
+            meta.setMaxLines(2);
+            meta.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            meta.setPadding(0, dp(2), 0, 0);
+            textCol.addView(meta);
 
             dlBtn = new Button(MainActivity.this);
             dlBtn.setText("下载");
-            dlBtn.setTextSize(13);
+            dlBtn.setTextSize(12);
             LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-            blp.setMargins(0, dp(6), 0, 0);
+            blp.setMargins(0, dp(4), 0, 0);
             dlBtn.setLayoutParams(blp);
             dlBtn.setOnClickListener(new android.view.View.OnClickListener() {
                 public void onClick(android.view.View v) {
                     if (id > 0) execNative("download " + id);
                 }
             });
-            root.addView(dlBtn);
+            textCol.addView(dlBtn);
+
+            root.addView(textCol);
         }
 
-        /** Place a decoded cover bitmap, clamped to the card width, 500dp tall. */
+        /** Place a decoded cover bitmap sized to the fixed cover slot. */
         void setCover(Bitmap bmp) {
             if (bmp == null) return;
             float density = getResources().getDisplayMetrics().density;
-            int availW = results.getWidth() - results.getPaddingLeft()
-                       - results.getPaddingRight();
-            if (availW <= 0) {
-                availW = (int) (getWindowManager().getDefaultDisplay().getWidth()
-                                - 12 * density);
-            }
-            int h = (int) (THUMB_H_DP * density + 0.5f);
-            int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
-            if (availW > 0 && w > availW) {
-                w = availW;
-                h = Math.max(1, w * bmp.getHeight() / bmp.getWidth());
-            }
+            int cardH = (int) (CARD_H_DP * density + 0.5f);
+            int coverW = (int) (cardH * 0.72f + 0.5f);
             Bitmap small;
             try {
-                small = Bitmap.createScaledBitmap(bmp, w, h, true);
+                small = Bitmap.createScaledBitmap(bmp, coverW, cardH, true);
             } catch (OutOfMemoryError e) {
                 meta.setText(meta.getText() + "  (封面过大)");
                 return;
             }
-            cover.setLayoutParams(new LinearLayout.LayoutParams(w, h));
             cover.setImageBitmap(small);
             cover.setVisibility(android.view.View.VISIBLE);
-            coverPlaced = true;
         }
 
         void setCoverFallback(String text) {
