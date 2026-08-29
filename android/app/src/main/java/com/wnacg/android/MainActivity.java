@@ -89,7 +89,7 @@ public class MainActivity extends Activity {
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads. The toggle lives on the app-info
         // page, not the empty "权限管理" list — we explain that in the output box.
-        out.setText("wnacg v1.1\n");  // version stamp: confirms which build is installed
+        out.setText("wnacg v1.2\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
@@ -310,6 +310,11 @@ public class MainActivity extends Activity {
                 // swap the token for a wide space carrying the image
                 ss.replace(pos, pos + token.length(), " ");
                 ss.setSpan(span, pos, pos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                // Without this the TextView keeps its stale layout and the image
+                // renders on top of the following text (results "叠在一起") until
+                // the next full redraw (app switch). Force re-measure + repaint.
+                out.invalidate();
+                out.requestLayout();
             }
         });
     }
@@ -325,6 +330,8 @@ public class MainActivity extends Activity {
                 int pos = ss.toString().indexOf(token);
                 if (pos < 0) return;
                 ss.replace(pos, pos + token.length(), text);
+                out.invalidate();
+                out.requestLayout();
             }
         });
     }
