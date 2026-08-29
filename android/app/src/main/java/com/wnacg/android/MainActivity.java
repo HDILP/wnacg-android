@@ -17,8 +17,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.regex.Matcher;
@@ -48,18 +46,17 @@ import android.provider.Settings;
  * 2010 trust store); pragmatic trade-off for a download tool, documented in the
  * README.
  *
- * Search results get an inline cover thumbnail: the C binary prints a
- * "封面: <url>" line per result; this shell swaps it for a small inline image
- * (downloaded through the SAME native binary so the TLS/IPv4 fixes apply, cached
- * in the app cache dir).
+ * Search output is streamed to the TextView live; each "封面: <url>" line the C
+ * binary prints becomes a placeholder that is swapped for an inline thumbnail as
+ * soon as it is downloaded (through the SAME native binary so the TLS/IPv4 fixes
+ * apply, cached in the app cache dir). Everything else streams through
+ * verbatim, so download progress stays live too.
  */
 public class MainActivity extends Activity {
     private static final String TAG = "wnacg";
     private static final String LIB_NAME = "wnacg";   // -> libwnacg.so
-    /** Unique placeholder inserted where a cover thumbnail will replace it. */
+    /** Unique placeholder swapped for a cover thumbnail when it arrives. */
     private static final String COVER_TOKEN = "\u25A3"; // ▣
-    private static final Pattern SEARCH_CMD =
-            Pattern.compile("^(search|tag)\\b.*", Pattern.DOTALL);
     private static final Pattern COVER_LINE =
             Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
     private static final Pattern NUM_RUN = Pattern.compile("\\d+");
@@ -68,6 +65,11 @@ public class MainActivity extends Activity {
     private EditText cmd;
     // Serialize native commands: one at a time, results keep their order.
     private final ExecutorService exec = Executors.newSingleThreadExecutor();
+    // Cover fetches run off the command queue so they start immediately while
+    // the search is still printing. Token index is global (never reset), so a
+    // failed cover can't shift later replacements.
+    private final ExecutorService coversExec = Executors.newFixedThreadPool(2);
+    private int coverSeq = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -96,6 +98,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         super.onDestroy();
         exec.shutdownNow();
+        coversExec.shutdownNow();
     }
 
     /** Resolve the on-disk path of libwnacg.so.
@@ -157,11 +160,6 @@ public class MainActivity extends Activity {
     }
 
     private void execNative(final String args) {
-        final boolean isSearch = SEARCH_CMD.matcher(args.trim()).matches();
-        // For search/tag we buffer the whole stdout so cover lines can be
-        // swapped for inline images before display. Other commands stream live
-        // (important for download progress).
-        final StringBuilder collected = new StringBuilder();
         exec.execute(new Runnable() {
             public void run() {
                 String bin = binaryPath();
@@ -185,15 +183,13 @@ public class MainActivity extends Activity {
                 try {
                     String[] argv = (bin + " " + cmdArgs).split(" ");
                     Process p = Runtime.getRuntime().exec(argv);
-                    // stream stdout + stderr concurrently so we never deadlock
-                    new ReaderThread(p.getInputStream(), true, isSearch, collected).start();
-                    new ReaderThread(p.getErrorStream(), false, false, null).start();
+                    // stream stdout + stderr concurrently so we never deadlock;
+                    // stdout may contain cover lines (intercepted), stderr is
+                    // shown verbatim (errors must never be swallowed)
+                    new ReaderThread(p.getInputStream(), true, true).start();
+                    new ReaderThread(p.getErrorStream(), true, false).start();
                     int rc = p.waitFor();
-                    if (isSearch) {
-                        finishSearchOutput(collected, rc);
-                    } else {
-                        append("\n[进程退出码: " + rc + "]\n");
-                    }
+                    append("\n[进程退出码: " + rc + "]\n");
                 } catch (IOException e) {
                     append("执行失败: " + e.getMessage() + "\n");
                 } catch (InterruptedException e) {
@@ -203,56 +199,38 @@ public class MainActivity extends Activity {
         });
     }
 
-    /** Render buffered search output on the UI thread: cover URL lines become a
-     *  token, then covers are fetched one at a time and swapped for thumbnails. */
-    private void finishSearchOutput(final StringBuilder collected, final int rc) {
-        final String full = collected.toString();
-        final List<String> covers = new ArrayList<String>();
-        final StringBuilder sb = new StringBuilder();
-        String[] lines = full.split("\n", -1);
-        for (String ln : lines) {
-            Matcher m = COVER_LINE.matcher(ln);
-            if (m.matches() && m.group(1).startsWith("http")) {
-                covers.add(m.group(1));
-                sb.append(COVER_TOKEN).append('\n');
-            } else {
-                sb.append(ln).append('\n');
-            }
-        }
-        sb.append("\n[进程退出码: " + rc + "]\n");
-        final String text = sb.toString();
-        runOnUiThread(new Runnable() {
+    /** Handles one output line. Returns true if the line was a "封面:" line
+     *  (a placeholder + async cover fetch was queued). Called from the native
+     *  command's reader thread, so appends keep their display order. */
+    private boolean handleStreamLine(final String line) {
+        Matcher m = COVER_LINE.matcher(line.trim());
+        if (!m.matches()) return false;
+        final String url = m.group(1);
+        if (!url.startsWith("http")) return false;
+        final int idx = coverSeq++;
+        append(COVER_TOKEN + "\n");
+        coversExec.execute(new Runnable() {
             public void run() {
-                out.setText(text);
+                final File f = fetchCover(url);
+                if (f == null) return;
+                final Bitmap bmp = decodeScaled(f);
+                if (bmp == null) return;
+                final float density = getResources().getDisplayMetrics().density;
+                final int h = (int) (56 * density + 0.5f);
+                final int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
+                final Bitmap small = Bitmap.createScaledBitmap(bmp, w, h, true);
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        replaceToken(idx, new ImageSpan(small));
+                    }
+                });
             }
         });
-        // fetch covers serially, replace tokens as they arrive
-        for (int k = 0; k < covers.size(); k++) {
-            final int idx = k;
-            final String url = covers.get(k);
-            exec.execute(new Runnable() {
-                public void run() {
-                    final File f = fetchCover(url);
-                    if (f == null) return;
-                    final Bitmap bmp = decodeScaled(f);
-                    if (bmp == null) return;
-                    final float density = getResources().getDisplayMetrics().density;
-                    final int h = (int) (56 * density + 0.5f);
-                    final int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
-                    final Bitmap small = Bitmap.createScaledBitmap(bmp, w, h, true);
-                    runOnUiThread(new Runnable() {
-                        public void run() {
-                            replaceToken(idx, new ImageSpan(small));
-                        }
-                    });
-                }
-            });
-        }
+        return true;
     }
 
     /** Download one cover through the native binary (same TLS/IPv4 fixes),
-     *  cached under cacheDir/covers/<id>.<ext>. Caller runs us on the serial
-     *  executor, so we never race the search command that produced the URL. */
+     *  cached under cacheDir/covers/<id>.<ext>. */
     private File fetchCover(String url) {
         long id = 0;
         // comic id = longest numeric run in the URL (e.g. /data/371091/...)
@@ -277,8 +255,8 @@ public class MainActivity extends Activity {
             String bin = binaryPath();
             Process p = Runtime.getRuntime().exec(new String[]{
                     bin, "cover", String.valueOf(id), url, target.getAbsolutePath()});
-            new ReaderThread(p.getInputStream(), false, false, null).start();
-            new ReaderThread(p.getErrorStream(), false, false, null).start();
+            new ReaderThread(p.getInputStream(), false, false).start();
+            new ReaderThread(p.getErrorStream(), false, false).start();
             int r = p.waitFor();
             return (r == 0 && target.exists()) ? target : null;
         } catch (IOException e) {
@@ -308,7 +286,9 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Replace the idx-th COVER_TOKEN in the output TextView with an image. */
+    /** Replace the idx-th COVER_TOKEN in the output TextView with an image.
+     *  idx is a global sequence number, so tokens from previous searches that
+     *  failed to load stay in place and never shift later replacements. */
     private void replaceToken(int idx, ImageSpan span) {
         CharSequence cur = out.getText();
         if (!(cur instanceof SpannableStringBuilder)) return;
@@ -343,23 +323,18 @@ public class MainActivity extends Activity {
     private class ReaderThread extends Thread {
         final InputStream is;
         final boolean appendLive;
-        final boolean collect;
-        final StringBuilder collected;
-        ReaderThread(InputStream is, boolean appendLive, boolean collect,
-                     StringBuilder collected) {
+        final boolean interceptCovers;
+        ReaderThread(InputStream is, boolean appendLive, boolean interceptCovers) {
             this.is = is;
             this.appendLive = appendLive;
-            this.collect = collect;
-            this.collected = collected;
+            this.interceptCovers = interceptCovers;
         }
         public void run() {
             try {
                 BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
                 String l;
                 while ((l = br.readLine()) != null) {
-                    if (collect) {
-                        synchronized (collected) { collected.append(l).append('\n'); }
-                    }
+                    if (appendLive && interceptCovers && handleStreamLine(l)) continue;
                     if (appendLive) append(l + "\n");
                 }
                 br.close();
