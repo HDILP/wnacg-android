@@ -57,7 +57,7 @@ EOF
 cat > "$BUILD/jni/Android.mk" <<EOF
 LOCAL_PATH := \$(call my-dir)
 WEBP_ROOT := \$(LOCAL_PATH)/../../$WEBP_DIR
-include \$(WEBP_ROOT)/android.mk
+include \$(WEBP_ROOT)/Android.mk
 EOF
 
 echo "[webp] ndk-build (armeabi, api9) ..."
