@@ -24,11 +24,14 @@ WEBP_URL=https://github.com/webmproject/libwebp.git
 # Fetch source if missing (idempotent; retries because CI/network can be flaky).
 if [ ! -f "$WEBP_DIR/src/dec/decode.c" ]; then
   echo "[webp] source missing, cloning $WEBP_URL ($WEBP_BRANCH) ..."
-  rm -rf "$WEBP_DIR"
   for attempt in 1 2 3; do
     echo "[webp] clone attempt $attempt/3"
-    if git clone --depth 1 --branch "$WEBP_BRANCH" "$WEBP_URL" "$WEBP_DIR" 2>&1 | tail -5; then
-      [ -f "$WEBP_DIR/src/dec/decode.c" ] && break
+    rm -rf "$WEBP_DIR"
+    if git clone --depth 1 --branch "$WEBP_BRANCH" "$WEBP_URL" "$WEBP_DIR" >/dev/null 2>&1; then
+      if [ -f "$WEBP_DIR/src/dec/decode.c" ]; then
+        echo "[webp] clone OK"
+        break
+      fi
     fi
     sleep 3
   done
