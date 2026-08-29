@@ -128,16 +128,18 @@ int cmd_search(int argc, char **argv, int is_tag) {
          * Caveat: the server only serves page 1 for f=tag (p>=2 returns empty);
          * we surface that to the user below. */
         snprintf(url, sizeof(url),
-                 "https://" g_api_domain "/search/index.php?q=%s&syn=yes&f=tag&s=create_time_DESC&p=%d",
-                 qenc, page);
+                 "https://%s/search/index.php?q=%s&syn=yes&f=tag&s=create_time_DESC&p=%d",
+                 g_api_domain, qenc, page);
     } else {
         snprintf(url, sizeof(url),
-                 "https://" g_api_domain "/search/index.php?q=%s&syn=yes&f=_all&s=create_time_DESC&p=%d",
-                 qenc, page);
+                 "https://%s/search/index.php?q=%s&syn=yes&f=_all&s=create_time_DESC&p=%d",
+                 g_api_domain, qenc, page);
     }
 
+    char referer[128];
+    snprintf(referer, sizeof(referer), "https://%s/", g_api_domain);
     http_response r;
-    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
+    if (http_get(url, referer, NULL, 5, &r) != 0) {
         fprintf(stderr, "搜索请求失败(网络/TLS错误)\n");
         return 1;
     }
@@ -186,10 +188,12 @@ int cmd_detail(int argc, char **argv) {
     long id = atol(argv[2]);
     char url[256];
     snprintf(url, sizeof(url),
-             "https://" g_api_domain "/photos-gallery-aid-%ld.html", id);
+             "https://%s/photos-gallery-aid-%ld.html", g_api_domain, id);
 
+    char referer[128];
+    snprintf(referer, sizeof(referer), "https://%s/", g_api_domain);
     http_response r;
-    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
+    if (http_get(url, referer, NULL, 5, &r) != 0) {
         fprintf(stderr, "详情请求失败\n");
         return 1;
     }
@@ -213,10 +217,12 @@ int cmd_download(int argc, char **argv) {
 
     char gallery_url[256];
     snprintf(gallery_url, sizeof(gallery_url),
-             "https://" g_api_domain "/photos-gallery-aid-%ld.html", id);
+             "https://%s/photos-gallery-aid-%ld.html", g_api_domain, id);
 
+    char referer[128];
+    snprintf(referer, sizeof(referer), "https://%s/", g_api_domain);
     http_response r;
-    if (http_get(gallery_url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
+    if (http_get(gallery_url, referer, NULL, 5, &r) != 0) {
         fprintf(stderr, "获取漫画页失败\n");
         return 1;
     }

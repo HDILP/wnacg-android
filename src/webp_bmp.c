@@ -31,8 +31,10 @@ static int is_webp(const unsigned char *data, long len) {
 #endif /* __ANDROID__ */
 
 int save_image_auto(const char *url, const char *out_path) {
+    char referer[128];
+    snprintf(referer, sizeof(referer), "https://%s/", g_api_domain);
     http_response r;
-    if (http_get(url, "https://" g_api_domain "/", NULL, 5, &r) != 0) {
+    if (http_get(url, referer, NULL, 5, &r) != 0) {
         fprintf(stderr, "  [!] network error: %s\n", url);
         return -1;
     }
