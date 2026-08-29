@@ -21,29 +21,48 @@ WEBP_DIR=thirdparty/libwebp
 WEBP_BRANCH=v1.3.2
 WEBP_URL=https://github.com/webmproject/libwebp.git
 
-# Fetch source if missing (idempotent; retries because CI/network can be flaky).
+# Fetch source if missing. Prefer a release tarball via curl (single HTTP GET,
+# more resilient to the flaky GitHub git protocol on CI), fall back to git clone.
+WEBP_TARBALL="https://github.com/webmproject/libwebp/archive/refs/tags/v1.3.2.tar.gz"
 if [ ! -f "$WEBP_DIR/src/dec/decode.c" ]; then
-  echo "[webp] source missing, cloning $WEBP_URL ($WEBP_BRANCH) ..."
-  for attempt in 1 2 3; do
-    echo "[webp] clone attempt $attempt/3"
-    rm -rf "$WEBP_DIR"
-    # surface the real error (don't discard stderr) and cap the time so a hung
-    # connection fails fast instead of stalling the whole job.
-    if GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
-       git clone --depth 1 --branch "$WEBP_BRANCH" "$WEBP_URL" "$WEBP_DIR" \
-         2>clone_err.txt; then
-      if [ -f "$WEBP_DIR/src/dec/decode.c" ]; then
-        echo "[webp] clone OK"
-        break
+  echo "[webp] source missing, fetching libwebp v1.3.2 ..."
+  fetched=0
+  # --- try tarball (up to 4 attempts) ---
+  for attempt in 1 2 3 4; do
+    echo "[webp] tarball attempt $attempt/4"
+    rm -rf "$WEBP_DIR" webp-tmp
+    if curl -fSL --retry 2 --connect-timeout 20 --max-time 180 \
+         "$WEBP_TARBALL" -o webp.tar.gz 2>dl_err.txt; then
+      mkdir -p webp-tmp
+      if tar xzf webp.tar.gz -C webp-tmp 2>/dev/null; then
+        # archive top dir is libwebp-1.3.2/
+        mv webp-tmp/libwebp-1.3.2 "$WEBP_DIR" 2>/dev/null && \
+          [ -f "$WEBP_DIR/src/dec/decode.c" ] && { echo "[webp] tarball OK"; fetched=1; break; }
       fi
     else
-      echo "[webp] clone failed (attempt $attempt):"; tail -5 clone_err.txt
+      echo "[webp] tarball download failed:"; tail -3 dl_err.txt
     fi
     sleep 3
   done
-  rm -f clone_err.txt
-  if [ ! -f "$WEBP_DIR/src/dec/decode.c" ]; then
-    echo "[webp] ERROR: could not fetch libwebp source (GitHub unreachable?)"
+  rm -rf webp-tmp webp.tar.gz dl_err.txt
+  # --- fall back to git clone (up to 3 attempts) ---
+  if [ "$fetched" -ne 1 ]; then
+    for attempt in 1 2 3; do
+      echo "[webp] git clone attempt $attempt/3"
+      rm -rf "$WEBP_DIR"
+      if GIT_HTTP_LOW_SPEED_LIMIT=1000 GIT_HTTP_LOW_SPEED_TIME=30 \
+         git clone --depth 1 --branch "$WEBP_BRANCH" "$WEBP_URL" "$WEBP_DIR" \
+           2>clone_err.txt; then
+        [ -f "$WEBP_DIR/src/dec/decode.c" ] && { echo "[webp] clone OK"; fetched=1; break; }
+      else
+        echo "[webp] clone failed (attempt $attempt):"; tail -5 clone_err.txt
+      fi
+      sleep 3
+    done
+    rm -f clone_err.txt
+  fi
+  if [ "$fetched" -ne 1 ]; then
+    echo "[webp] ERROR: could not fetch libwebp source"
     exit 1
   fi
 fi
