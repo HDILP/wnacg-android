@@ -458,10 +458,18 @@ public class MainActivity extends Activity {
         }
         Matcher si = SEARCH_ITEM.matcher(line);
         if (si.find()) {
+            final String titleText = si.group(2).trim();
             curCard = new SearchCard();
-            curCard.title.setText(si.group(2).trim());
+            final SearchCard card = curCard;
+            // A card's views MUST be created/added/touched on the UI thread.
+            // handleLine runs on the reader (worker) thread, so post both the
+            // title write and the addView to the UI thread; FIFO ordering in the
+            // UI queue guarantees addView happens before the later meta write.
             runOnUiThread(new Runnable() {
-                public void run() { results.addView(curCard.root); }
+                public void run() {
+                    card.title.setText(titleText);
+                    results.addView(card.root);
+                }
             });
             return;
         }
@@ -469,8 +477,13 @@ public class MainActivity extends Activity {
             Matcher idm = ID_LINE.matcher(line);
             if (idm.find()) {
                 try { curCard.id = Long.parseLong(idm.group(1)); } catch (NumberFormatException e) {}
-                String extra = idm.group(2).trim();
-                if (extra.length() > 0) curCard.meta.setText(extra);
+                final String extra = idm.group(2).trim();
+                if (extra.length() > 0) {
+                    final SearchCard card = curCard;
+                    runOnUiThread(new Runnable() {
+                        public void run() { card.meta.setText(extra); }
+                    });
+                }
                 return;
             }
             Matcher cm = COVER_LINE.matcher(line.trim());
