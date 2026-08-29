@@ -18,8 +18,6 @@ cd "$(dirname "$0")"
 BS_DIR=thirdparty/bearssl-0.6
 BS_LIB="$BS_DIR/build/libbearssl.a"
 BS_INC="$BS_DIR/inc"
-WEBP_INC=thirdparty/libwebp/src
-WEBP_LIB=thirdparty/libwebp/build-android/libwebp.a
 
 DOMAIN='www.wn09.shop'
 CFLAGS="-O2 -Wall -Wextra -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"$DOMAIN\""
@@ -29,14 +27,13 @@ build_host() {
         echo "[build] compiling BearSSL (host) ..."
         (cd "$BS_DIR" && make CC="${CC:-gcc}")
     fi
-    if [ ! -f "$WEBP_LIB" ]; then
-        echo "[build] compiling libwebp (host, decode only) ..."
-        bash build-webp.sh
-    fi
     echo "[build] compiling ./wnacg (host, gcc) ..."
-    ${CC:-gcc} $CFLAGS -I"$BS_INC" -I"$WEBP_INC" \
+    # NOTE: libwebp is NOT linked on the host build. webp_bmp.c compiles out the
+    # WebP->BMP path under #ifndef __ANDROID__, so the host binary is a plain
+    # pass-through for covers. The Android build (build-android.sh) links libwebp.
+    ${CC:-gcc} $CFLAGS -I"$BS_INC" \
         src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c \
-        -o wnacg "$BS_LIB" "$WEBP_LIB"
+        -o wnacg "$BS_LIB"
     echo "[build] host binary ready: ./wnacg"
 }
 
