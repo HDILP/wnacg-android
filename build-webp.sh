@@ -25,8 +25,10 @@ if [ ! -f "$WEBP_DIR/src/dec/decode.c" ]; then
     echo "[webp] tarball downloaded: $(wc -c < webp.tar.gz) bytes"
     mkdir -p webp-tmp
     if tar xzf webp.tar.gz -C webp-tmp; then
+      echo "[webp] webp-tmp contents:"; ls -la webp-tmp
       # top dir is libwebp-<version>; match it loosely
-      src=$(ls -d webp-tmp/libwebp-* 2>/dev/null | head -1)
+      src=$(find webp-tmp -maxdepth 1 -type d -name 'libwebp*' 2>/dev/null | head -1)
+      echo "[webp] detected src dir: '$src'"
       if [ -n "$src" ] && [ -f "$src/src/dec/decode.c" ]; then
         mv "$src" "$WEBP_DIR"
         echo "[webp] source extracted -> $WEBP_DIR"
