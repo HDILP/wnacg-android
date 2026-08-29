@@ -26,6 +26,8 @@ if [ ! -f "$WEBP_DIR/src/dec/decode.c" ]; then
     mkdir -p webp-tmp
     if tar xzf webp.tar.gz -C webp-tmp; then
       echo "[webp] webp-tmp contents:"; ls -la webp-tmp
+      echo "[webp] find decode.c:"; find webp-tmp -name decode.c 2>/dev/null | head
+      echo "[webp] find configure:"; find webp-tmp -maxdepth 2 -name configure 2>/dev/null | head
       # top dir is libwebp-<version>; match it loosely
       src=$(find webp-tmp -maxdepth 1 -type d -name 'libwebp*' 2>/dev/null | head -1)
       echo "[webp] detected src dir: '$src'"
