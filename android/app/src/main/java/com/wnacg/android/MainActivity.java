@@ -6,12 +6,23 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.TextView;
 import android.util.Log;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.text.Spannable;
+import android.text.SpannableStringBuilder;
+import android.text.style.ImageSpan;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import android.content.pm.PackageManager;
 import android.content.Intent;
@@ -36,12 +47,27 @@ import android.provider.Settings;
  * validation is OFF in the binary by default (the site's CA chain is not in the
  * 2010 trust store); pragmatic trade-off for a download tool, documented in the
  * README.
+ *
+ * Search results get an inline cover thumbnail: the C binary prints a
+ * "封面: <url>" line per result; this shell swaps it for a small inline image
+ * (downloaded through the SAME native binary so the TLS/IPv4 fixes apply, cached
+ * in the app cache dir).
  */
 public class MainActivity extends Activity {
     private static final String TAG = "wnacg";
     private static final String LIB_NAME = "wnacg";   // -> libwnacg.so
+    /** Unique placeholder inserted where a cover thumbnail will replace it. */
+    private static final String COVER_TOKEN = "\u25A3"; // ▣
+    private static final Pattern SEARCH_CMD =
+            Pattern.compile("^(search|tag)\\b.*", Pattern.DOTALL);
+    private static final Pattern COVER_LINE =
+            Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
+    private static final Pattern NUM_RUN = Pattern.compile("\\d+");
+
     private TextView out;
     private EditText cmd;
+    // Serialize native commands: one at a time, results keep their order.
+    private final ExecutorService exec = Executors.newSingleThreadExecutor();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -64,6 +90,12 @@ public class MainActivity extends Activity {
                 execNative(line);
             }
         });
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        exec.shutdownNow();
     }
 
     /** Resolve the on-disk path of libwnacg.so.
@@ -125,11 +157,12 @@ public class MainActivity extends Activity {
     }
 
     private void execNative(final String args) {
-        // Run the native binary on a background thread: waitFor() blocks, and
-        // doing that on the UI thread freezes the app (ANR "未响应") while a
-        // whole book downloads. ReaderThread already posts output via
-        // runOnUiThread, so progress still streams into the TextView live.
-        new Thread(new Runnable() {
+        final boolean isSearch = SEARCH_CMD.matcher(args.trim()).matches();
+        // For search/tag we buffer the whole stdout so cover lines can be
+        // swapped for inline images before display. Other commands stream live
+        // (important for download progress).
+        final StringBuilder collected = new StringBuilder();
+        exec.execute(new Runnable() {
             public void run() {
                 String bin = binaryPath();
                 // Auto-append a default download dir for `download <id>` so the user
@@ -153,17 +186,150 @@ public class MainActivity extends Activity {
                     String[] argv = (bin + " " + cmdArgs).split(" ");
                     Process p = Runtime.getRuntime().exec(argv);
                     // stream stdout + stderr concurrently so we never deadlock
-                    new ReaderThread(p.getInputStream()).start();
-                    new ReaderThread(p.getErrorStream()).start();
+                    new ReaderThread(p.getInputStream(), true, isSearch, collected).start();
+                    new ReaderThread(p.getErrorStream(), false, false, null).start();
                     int rc = p.waitFor();
-                    append("\n[进程退出码: " + rc + "]\n");
+                    if (isSearch) {
+                        finishSearchOutput(collected, rc);
+                    } else {
+                        append("\n[进程退出码: " + rc + "]\n");
+                    }
                 } catch (IOException e) {
                     append("执行失败: " + e.getMessage() + "\n");
                 } catch (InterruptedException e) {
                     append("被中断\n");
                 }
             }
-        }).start();
+        });
+    }
+
+    /** Render buffered search output on the UI thread: cover URL lines become a
+     *  token, then covers are fetched one at a time and swapped for thumbnails. */
+    private void finishSearchOutput(final StringBuilder collected, final int rc) {
+        final String full = collected.toString();
+        final List<String> covers = new ArrayList<String>();
+        final StringBuilder sb = new StringBuilder();
+        String[] lines = full.split("\n", -1);
+        for (String ln : lines) {
+            Matcher m = COVER_LINE.matcher(ln);
+            if (m.matches() && m.group(1).startsWith("http")) {
+                covers.add(m.group(1));
+                sb.append(COVER_TOKEN).append('\n');
+            } else {
+                sb.append(ln).append('\n');
+            }
+        }
+        sb.append("\n[进程退出码: " + rc + "]\n");
+        final String text = sb.toString();
+        runOnUiThread(new Runnable() {
+            public void run() {
+                out.setText(text);
+            }
+        });
+        // fetch covers serially, replace tokens as they arrive
+        for (int k = 0; k < covers.size(); k++) {
+            final int idx = k;
+            final String url = covers.get(k);
+            exec.execute(new Runnable() {
+                public void run() {
+                    final File f = fetchCover(url);
+                    if (f == null) return;
+                    final Bitmap bmp = decodeScaled(f);
+                    if (bmp == null) return;
+                    final float density = getResources().getDisplayMetrics().density;
+                    final int h = (int) (56 * density + 0.5f);
+                    final int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
+                    final Bitmap small = Bitmap.createScaledBitmap(bmp, w, h, true);
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            replaceToken(idx, new ImageSpan(small));
+                        }
+                    });
+                }
+            });
+        }
+    }
+
+    /** Download one cover through the native binary (same TLS/IPv4 fixes),
+     *  cached under cacheDir/covers/<id>.<ext>. Caller runs us on the serial
+     *  executor, so we never race the search command that produced the URL. */
+    private File fetchCover(String url) {
+        long id = 0;
+        // comic id = longest numeric run in the URL (e.g. /data/371091/...)
+        Matcher nm = NUM_RUN.matcher(url);
+        while (nm.find()) {
+            long v = 0;
+            try { v = Long.parseLong(nm.group()); } catch (NumberFormatException e) { continue; }
+            if (v > id) id = v;
+        }
+        File dir = new File(getCacheDir(), "covers");
+        if (!dir.exists()) dir.mkdirs();
+        // keep the URL's extension so the decoder can sniff the format
+        String ext = ".img";
+        int dot = url.lastIndexOf('.');
+        if (dot >= 0 && url.length() - dot <= 6) {
+            String e = url.substring(dot);
+            if (!e.contains("/")) ext = e;
+        }
+        File target = new File(dir, id + ext);
+        if (target.exists()) return target;
+        try {
+            String bin = binaryPath();
+            Process p = Runtime.getRuntime().exec(new String[]{
+                    bin, "cover", String.valueOf(id), url, target.getAbsolutePath()});
+            new ReaderThread(p.getInputStream(), false, false, null).start();
+            new ReaderThread(p.getErrorStream(), false, false, null).start();
+            int r = p.waitFor();
+            return (r == 0 && target.exists()) ? target : null;
+        } catch (IOException e) {
+            Log.w(TAG, "cover fetch failed: " + e.getMessage());
+            return null;
+        } catch (InterruptedException e) {
+            return null;
+        }
+    }
+
+    /** Decode a cover file, downsampled so a full-res image never hits memory. */
+    private Bitmap decodeScaled(File f) {
+        BitmapFactory.Options opts = new BitmapFactory.Options();
+        opts.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(f.getAbsolutePath(), opts);
+        float density = getResources().getDisplayMetrics().density;
+        int targetH = (int) (56 * density + 0.5f);
+        int sample = 1;
+        while (opts.outHeight / (sample * 2) >= targetH) sample *= 2;
+        opts.inJustDecodeBounds = false;
+        opts.inSampleSize = sample;
+        try {
+            return BitmapFactory.decodeFile(f.getAbsolutePath(), opts);
+        } catch (OutOfMemoryError e) {
+            Log.w(TAG, "cover decode OOM");
+            return null;
+        }
+    }
+
+    /** Replace the idx-th COVER_TOKEN in the output TextView with an image. */
+    private void replaceToken(int idx, ImageSpan span) {
+        CharSequence cur = out.getText();
+        if (!(cur instanceof SpannableStringBuilder)) return;
+        SpannableStringBuilder ss = (SpannableStringBuilder) cur;
+        int pos = -1;
+        int seen = 0;
+        int from = 0;
+        while ((pos = indexOfLoop(ss, COVER_TOKEN, from)) >= 0) {
+            if (seen == idx) {
+                // swap the token for a wide space carrying the image
+                ss.replace(pos, pos + COVER_TOKEN.length(), " ");
+                ss.setSpan(span, pos, pos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
+                return;
+            }
+            seen++;
+            from = pos + COVER_TOKEN.length();
+        }
+    }
+
+    private int indexOfLoop(SpannableStringBuilder ss, String needle, int from) {
+        return ss.toString().indexOf(needle, from);
     }
 
     private void append(final String s) {
@@ -176,12 +342,26 @@ public class MainActivity extends Activity {
 
     private class ReaderThread extends Thread {
         final InputStream is;
-        ReaderThread(InputStream is) { this.is = is; }
+        final boolean appendLive;
+        final boolean collect;
+        final StringBuilder collected;
+        ReaderThread(InputStream is, boolean appendLive, boolean collect,
+                     StringBuilder collected) {
+            this.is = is;
+            this.appendLive = appendLive;
+            this.collect = collect;
+            this.collected = collected;
+        }
         public void run() {
             try {
                 BufferedReader br = new BufferedReader(new InputStreamReader(is, "UTF-8"));
                 String l;
-                while ((l = br.readLine()) != null) append(l + "\n");
+                while ((l = br.readLine()) != null) {
+                    if (collect) {
+                        synchronized (collected) { collected.append(l).append('\n'); }
+                    }
+                    if (appendLive) append(l + "\n");
+                }
                 br.close();
             } catch (IOException e) {
                 // swallow; process is going away

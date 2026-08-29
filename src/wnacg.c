@@ -164,6 +164,8 @@ int cmd_search(int argc, char **argv, int is_tag) {
         printf("   ID: %ld", e->id);
         if (e->additional && *e->additional)
             printf("    %s", e->additional);
+        if (e->cover && *e->cover)
+            printf("\n   封面: %s", e->cover);
         printf("\n   下载: download %ld\n", e->id);
     }
     printf("\n────────────────────────────\n");
@@ -251,6 +253,19 @@ int cmd_download(int argc, char **argv) {
     return fail ? 1 : 0;
 }
 
+int cmd_cover(int argc, char **argv) {
+    if (argc < 5) {
+        fprintf(stderr, "用法: %s cover <漫画ID> <URL> <输出文件>\n", argv[0]);
+        return 1;
+    }
+    const char *url = argv[3];
+    if (strncmp(url, "http://", 7) != 0 && strncmp(url, "https://", 8) != 0) {
+        fprintf(stderr, "无效封面 URL: %s\n", url);
+        return 1;
+    }
+    return download_image(url, argv[4]) == 0 ? 0 : 1;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) { usage(argv[0]); return 1; }
     const char *cmd = argv[1];
@@ -258,6 +273,7 @@ int main(int argc, char **argv) {
     if (strcmp(cmd, "tag") == 0)      return cmd_search(argc, argv, 1);
     if (strcmp(cmd, "download") == 0)  return cmd_download(argc, argv);
     if (strcmp(cmd, "detail") == 0)   return cmd_detail(argc, argv);
+    if (strcmp(cmd, "cover") == 0)    return cmd_cover(argc, argv);
     usage(argv[0]);
     return 1;
 }
