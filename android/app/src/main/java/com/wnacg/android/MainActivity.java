@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private static final char COVER_TOKEN = '\u25A3'; // ▣
     private static final String TOKEN_FMT = "\u25A3%d\u25A3"; // ▣N▣
     /** Cover thumbnail target height in dp. */
-    private static final int THUMB_H_DP = 300;
+    private static final int THUMB_H_DP = 500;
     private static final Pattern COVER_LINE =
             Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
     private static final Pattern NUM_RUN = Pattern.compile("\\d+");
@@ -89,6 +89,7 @@ public class MainActivity extends Activity {
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads. The toggle lives on the app-info
         // page, not the empty "权限管理" list — we explain that in the output box.
+        out.setText("wnacg v1.1\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
