@@ -10,4 +10,9 @@ thirdparty/bearssl-0.6/build-android/
 android/app/build/
 tests/parse_test
 
+# Legacy (non-PIE, API 9-15) binary is a CI build product generated into assets/
+# by build-android.sh — unlike jniLibs/libwnacg.so (committed as source), the
+# legacy binary is only meaningful in the packaged APK.
+android/app/src/main/assets/wnacg-legacy
+
 thirdparty/bearssl.tar.gz

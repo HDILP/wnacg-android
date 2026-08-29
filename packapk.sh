@@ -45,10 +45,16 @@ echo "[apk] aapt2 compile resources ..."
 echo "[apk] aapt2 link ..."
 echo "[apk] WORK=$WORK ; pwd=$(pwd)"
 ls -la "$WORK" 2>&1 | head
+# The legacy (non-PIE, API 9-15) binary lives in assets/; pack it too.
+AAPT2_ASSETS=()
+if [ -d "$APP_ROOT/assets" ]; then
+    AAPT2_ASSETS=(-A "$APP_ROOT/assets")
+fi
 "$BT/aapt2" link --no-auto-version \
     -o "$WORK/app-unsigned.apk" \
     -I "$PLAT/android.jar" \
     --manifest "$APP_ROOT/AndroidManifest.xml" \
+    "${AAPT2_ASSETS[@]}" \
     "$WORK/res.zip" \
     --java "$WORK/gen" \
     --min-sdk-version 9 --target-sdk-version 34 2>"$WORK/aapt2link.err" || { echo "[apk] aapt2 link FAILED (rc=$?)"; cat "$WORK/aapt2link.err"; exit 1; }

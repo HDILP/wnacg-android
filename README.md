@@ -17,15 +17,20 @@
 
 - **BearSSL 静态链接**：自带的 TLS 栈在 API 9 上早就过期，且 2.3 的 `HttpsURLConnection`
   不支持现代 cipher，握手必失败。BearSSL 体积小数百 KB、可静态链接，自己搞定握手。
-- **不碰 JNI**：原生逻辑全在 C 里，Java 只负责「找到 `nativeLibraryDir` 里的 `libwnacg.so`
-  （一个 PIE 可执行文件，伪装成 .so 以便系统把它装到唯一允许 exec 的目录）→ Runtime.exec
-  接收参数 → 把 stdout/stderr 回显到 TextView」。2.3 的 NDK/JNI 坑太多，能不碰就不碰。
+- **不碰 JNI**：原生逻辑全在 C 里，Java 只负责「按系统版本挑二进制（API 16+ 用
+  `nativeLibraryDir` 里的 `libwnacg.so`，一个 PIE 可执行文件伪装成 .so；API 9–15 用
+  assets 里解压出来的非 PIE `wnacg-legacy`）→ Runtime.exec 接收参数 → 把 stdout/stderr
+  回显到 TextView」。2.3 的 NDK/JNI 坑太多，能不碰就不碰。
 - **为什么打成 native library 而不是 assets 里的可执行文件**：Android 10+（API 29+）禁止
   从 app 自己的 `data/files` 目录或 assets 里 `exec()` 二进制（SELinux/W^X 直接拒绝）。
   把二进制放进 `jniLibs/armeabi/libwnacg.so`，安装时系统会把它解到 `nativeLibraryDir`，
-  这是现代 Android 上为数不多允许 exec 的路径；Gingerbread 上同一布局同样可 exec，
-  于是一份产物覆盖 2.3 到 16。注意它必须用 `-pie -fPIE` 编成**可执行文件**（有 `_start`
+  这是现代 Android 上为数不多允许 exec 的路径。注意它必须用 `-pie -fPIE` 编成**可执行文件**（有 `_start`
   入口），`-shared` 共享库没有入口、exec 不了。
+- **双二进制保 2.3**：PIE 支持是 Android 4.1（API 16）的 linker 才加入的，2.3 的 linker
+  直接拒绝加载 PIE（退出码 11 / SIGSEGV），「一份 PIE 产物」跑不了 2.3。老系统（API 9–15）
+  没有 exec 路径限制，因此额外编译一个经典非 PIE（ET_EXEC）二进制放进 `assets/wnacg-legacy`，
+  Java 壳在 `SDK_INT < 16` 时解压到 `filesDir` 再 exec；新系统（API 16+）继续用
+  `nativeLibraryDir` 的 PIE。两个二进制同一份 C 源码，只差 `-pie`。
 - **证书校验默认关闭**：站点的 CA 链不在 2010 年的系统信任库里，且漫画站 TLS 配置多变。
   出于实用主义，二进制里把 x509 校验做成 no-op（只取叶子证书公钥完成握手），仅做
   加密传输、不做身份认证。这是下载工具的取舍，已在代码注释里标清，可加编译开关开启。

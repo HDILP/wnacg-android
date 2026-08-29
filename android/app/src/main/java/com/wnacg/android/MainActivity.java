@@ -89,7 +89,7 @@ public class MainActivity extends Activity {
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads. The toggle lives on the app-info
         // page, not the empty "权限管理" list — we explain that in the output box.
-        out.setText("wnacg v1.3\n");  // version stamp: confirms which build is installed
+        out.setText("wnacg v1.4\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
 
         run.setOnClickListener(new Button.OnClickListener() {
@@ -108,14 +108,47 @@ public class MainActivity extends Activity {
         coversExec.shutdownNow();
     }
 
-    /** Resolve the on-disk path of libwnacg.so.
-     *  The binary is packaged as a native library (jniLibs), so the system
-     *  installs it into nativeLibraryDir — the only path where exec() is allowed
-     *  on modern Android (API 29+ blocks exec from data/files and assets). On
-     *  Gingerbread (API 9) this same path is also exec-allowed. */
+    /** Resolve the on-disk binary path.
+     *  API 16+ : PIE executable shipped as libwnacg.so in nativeLibraryDir —
+     *            the only exec-allowed path on Android 10+, and the 4.1 (API
+     *            16) linker is the first that supports PIE at all.
+     *  API 9–15: Gingerbread's linker cannot load PIE binaries (exit code 11 /
+     *            SIGSEGV), but old systems have no exec-path restriction, so
+     *            we run the classic non-PIE binary shipped in assets/,
+     *            extracted to filesDir. */
     private String binaryPath() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.JELLY_BEAN) {
+            return extractLegacyBinary();
+        }
         File lib = new File(getApplicationInfo().nativeLibraryDir, "lib" + LIB_NAME + ".so");
         return lib.getAbsolutePath();
+    }
+
+    /** Copy assets/wnacg-legacy (non-PIE, for API 9–15) into filesDir and make
+     *  it executable. Gingerbread's linker can't run the PIE libwnacg.so, but
+     *  pre-API-16 Android allows exec from the app-private dir. Returns the
+     *  executable path, falling back to the PIE path if extraction failed. */
+    private String extractLegacyBinary() {
+        File exe = new File(getFilesDir(), "wnacg-legacy");
+        if (!exe.exists()) {
+            try {
+                InputStream in = getAssets().open("wnacg-legacy");
+                java.io.FileOutputStream fos = new java.io.FileOutputStream(exe);
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) fos.write(buf, 0, n);
+                fos.close();
+                in.close();
+            } catch (IOException e) {
+                Log.w(TAG, "legacy binary extract failed: " + e.getMessage());
+            }
+        }
+        if (exe.exists()) {
+            exe.setExecutable(true, false);
+            return exe.getAbsolutePath();
+        }
+        return new File(getApplicationInfo().nativeLibraryDir,
+                        "lib" + LIB_NAME + ".so").getAbsolutePath();
     }
 
     /** Open the system "All Files Access" grant page so the user can enable

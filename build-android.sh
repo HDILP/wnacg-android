@@ -67,7 +67,26 @@ fi
 #    A PIE executable is an ELF ET_DYN with a real entry point, so exec() works,
 #    AND aapt2 still packs a file named lib*.so into lib/armeabi/ → the system
 #    installs it in nativeLibraryDir (the one exec-allowed path on modern Android).
-mkdir -p "$OUT_DIR"
+#
+#    DUAL BINARY for Android 2.3 (API 9):
+#    PIE support was added to the bionic linker in Android 4.1 (API 16), so the
+#    Gingerbread linker refuses to load the PIE above (exit code 11 / SIGSEGV).
+#    Old systems (API 9–15) have NO exec-path restrictions, so we ALSO build a
+#    classic non-PIE ET_EXEC and ship it in assets/. The Java shell picks it up
+#    on SDK_INT < 16, extracts it to filesDir and execs it there. Modern
+#    Android (16+) keeps using the nativeLibraryDir PIE.
+mkdir -p "$OUT_DIR" android/app/src/main/assets
+echo "[android] compiling wnacg-legacy (ARMv5TE, non-PIE ET_EXEC) for API 9-15 ..."
+"$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
+    -O2 -std=c99 \
+    -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
+    -I"$BS_INC" \
+    src/net.c src/tls.c src/html.c src/wnacg.c \
+    -o android/app/src/main/assets/wnacg-legacy \
+    -Wl,--start-group "$BS_LIB_ANDROID" -lc -lm -ldl -Wl,--end-group
+"$TC-strip" android/app/src/main/assets/wnacg-legacy 2>/dev/null || true
+echo "[android] wrote android/app/src/main/assets/wnacg-legacy ($(wc -c < android/app/src/main/assets/wnacg-legacy) bytes)"
+
 echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 -fPIE \
@@ -81,3 +100,4 @@ echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
 "$TC-strip" "$OUT_LIB" 2>/dev/null || true
 echo "[android] wrote $OUT_LIB ($(wc -c < "$OUT_LIB") bytes)"
 file "$OUT_LIB" 2>/dev/null || true
+file android/app/src/main/assets/wnacg-legacy 2>/dev/null || true
