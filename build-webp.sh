@@ -18,7 +18,7 @@ cd "$(dirname "$0")"
 NDK="${ANDROID_NDK_HOME:?ANDROID_NDK_HOME must point at an NDK r16b install}"
 
 WEBP_DIR=thirdparty/libwebp
-WEBP_BRANCH=1.3.2-stable
+WEBP_BRANCH=v1.3.2
 WEBP_URL=https://github.com/webmproject/libwebp.git
 
 # Fetch source if missing (idempotent; retries because CI/network can be flaky).
