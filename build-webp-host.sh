@@ -40,9 +40,11 @@ cmake -S "$WEBP_DIR" -B "$OUT" \
   -DWEBP_BUILD_WEBPMUX=OFF -DWEBP_BUILD_EXTRAS=OFF >/dev/null
 cmake --build "$OUT" -j4
 
-# locate the produced static lib (cmake names it libwebp.a)
+# locate the produced static lib (cmake names it libwebp.a); if it's already at
+# $OUT/libwebp.a there's nothing to copy.
 A=$(find "$OUT" -name 'libwebp.a' | head -1)
 if [ -z "$A" ]; then echo "[webp-host] ERROR: libwebp.a not produced"; exit 1; fi
-# normalize to $OUT/libwebp.a
-cp "$A" "$OUT/libwebp.a"
+if [ "$A" != "$OUT/libwebp.a" ]; then
+  cp "$A" "$OUT/libwebp.a"
+fi
 echo "[webp-host] OK -> $OUT/libwebp.a ($(wc -c < "$OUT/libwebp.a") bytes)"
