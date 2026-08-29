@@ -55,10 +55,14 @@ import android.provider.Settings;
 public class MainActivity extends Activity {
     private static final String TAG = "wnacg";
     private static final String LIB_NAME = "wnacg";   // -> libwnacg.so
-    /** Unique placeholder swapped for a cover thumbnail when it arrives. */
-    private static final String COVER_TOKEN = "\u25A3"; // ▣
+    /** Unique placeholder swapped for a cover thumbnail when it arrives.
+     *  Each cover line gets a DISTINCT token (▣N▣, N = global sequence), so
+     *  replacements always match the exact slot — earlier failures or out-of-
+     *  order completions can never shift a later image to the wrong row. */
+    private static final char COVER_TOKEN = '\u25A3'; // ▣
+    private static final String TOKEN_FMT = "\u25A3%d\u25A3"; // ▣N▣
     /** Cover thumbnail target height in dp. */
-    private static final int THUMB_H_DP = 100;
+    private static final int THUMB_H_DP = 150;
     private static final Pattern COVER_LINE =
             Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
     private static final Pattern NUM_RUN = Pattern.compile("\\d+");
@@ -210,22 +214,25 @@ public class MainActivity extends Activity {
         final String url = m.group(1);
         if (!url.startsWith("http")) return false;
         final int idx = coverSeq++;
-        append(COVER_TOKEN + "\n");
+        final String token = String.format(TOKEN_FMT, idx); // ▣N▣
+        append(token + "\n");
         coversExec.execute(new Runnable() {
             public void run() {
                 final File f = fetchCover(url);
-                if (f == null) return;
+                if (f == null) {
+                    replaceTokenText(idx, "(封面获取失败)");
+                    return;
+                }
                 final Bitmap bmp = decodeScaled(f);
-                if (bmp == null) return;
+                if (bmp == null) {
+                    replaceTokenText(idx, "(封面解码失败)");
+                    return;
+                }
                 final float density = getResources().getDisplayMetrics().density;
                 final int h = (int) (THUMB_H_DP * density + 0.5f);
                 final int w = Math.max(1, bmp.getWidth() * h / bmp.getHeight());
                 final Bitmap small = Bitmap.createScaledBitmap(bmp, w, h, true);
-                runOnUiThread(new Runnable() {
-                    public void run() {
-                        replaceToken(idx, new ImageSpan(small));
-                    }
-                });
+                replaceToken(String.format(TOKEN_FMT, idx), new ImageSpan(small));
             }
         });
         return true;
@@ -288,30 +295,37 @@ public class MainActivity extends Activity {
         }
     }
 
-    /** Replace the idx-th COVER_TOKEN in the output TextView with an image.
-     *  idx is a global sequence number, so tokens from previous searches that
-     *  failed to load stay in place and never shift later replacements. */
-    private void replaceToken(int idx, ImageSpan span) {
-        CharSequence cur = out.getText();
-        if (!(cur instanceof SpannableStringBuilder)) return;
-        SpannableStringBuilder ss = (SpannableStringBuilder) cur;
-        int pos = -1;
-        int seen = 0;
-        int from = 0;
-        while ((pos = indexOfLoop(ss, COVER_TOKEN, from)) >= 0) {
-            if (seen == idx) {
+    /** Replace the token ▣N▣ (exact unique match) with an image. Using the
+     *  unique token string means completion order and earlier failures can
+     *  never map an image onto the wrong row. */
+    private void replaceToken(final String token, ImageSpan span) {
+        runOnUiThread(new Runnable() {
+            public void run() {
+                CharSequence cur = out.getText();
+                if (!(cur instanceof SpannableStringBuilder)) return;
+                SpannableStringBuilder ss = (SpannableStringBuilder) cur;
+                int pos = ss.toString().indexOf(token);
+                if (pos < 0) return; // already replaced or cleared
                 // swap the token for a wide space carrying the image
-                ss.replace(pos, pos + COVER_TOKEN.length(), " ");
+                ss.replace(pos, pos + token.length(), " ");
                 ss.setSpan(span, pos, pos + 1, Spannable.SPAN_EXCLUSIVE_EXCLUSIVE);
-                return;
             }
-            seen++;
-            from = pos + COVER_TOKEN.length();
-        }
+        });
     }
 
-    private int indexOfLoop(SpannableStringBuilder ss, String needle, int from) {
-        return ss.toString().indexOf(needle, from);
+    /** Replace the token ▣N▣ with a fallback text (fetch/decode failure). */
+    private void replaceTokenText(final int idx, final String text) {
+        final String token = String.format(TOKEN_FMT, idx);
+        runOnUiThread(new Runnable() {
+            public void run() {
+                CharSequence cur = out.getText();
+                if (!(cur instanceof SpannableStringBuilder)) return;
+                SpannableStringBuilder ss = (SpannableStringBuilder) cur;
+                int pos = ss.toString().indexOf(token);
+                if (pos < 0) return;
+                ss.replace(pos, pos + token.length(), text);
+            }
+        });
     }
 
     private void append(final String s) {
