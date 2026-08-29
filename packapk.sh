@@ -89,16 +89,25 @@ echo "[apk] add classes.dex ..."
 cp "$WORK/app-unsigned.apk" "$WORK/app-withdex.apk"
 ( cd "$WORK" && zip -q -j app-withdex.apk classes.dex )
 
-# 5) Align + sign with a throwaway debug keystore.
+# 5) Align + sign. Reuse an existing debug keystore when present so every
+#    build signs with the SAME cert: overwrite-install works without first
+#    uninstalling (mismatched signatures force uninstall). CI caches the
+#    keystore across runs; local builds keep $WORK/debug.keystore. An external
+#    keystore path (e.g. $WNACG_KEYSTORE) takes priority over the workdir one.
 echo "[apk] zipalign + apksigner ..."
-keytool -genkeypair -v \
-    -keystore "$WORK/debug.keystore" -alias androiddebugkey \
-    -keyalg RSA -keysize 2048 -validity 10000 \
-    -storepass android -keypass android \
-    -dname "CN=wnacg,O=wnacg" 2>/dev/null
+KS="${WNACG_KEYSTORE:-$WORK/debug.keystore}"
+if [ ! -f "$KS" ]; then
+    keytool -genkeypair -v \
+        -keystore "$KS" -alias androiddebugkey \
+        -keyalg RSA -keysize 2048 -validity 10000 \
+        -storepass android -keypass android \
+        -dname "CN=wnacg,O=wnacg" 2>/dev/null
+else
+    echo "[apk] reusing keystore: $KS"
+fi
 "$BT/zipalign" -p 4 "$WORK/app-withdex.apk" "$WORK/app-aligned.apk"
 "$BT/apksigner" sign \
-    --ks "$WORK/debug.keystore" --ks-key-alias androiddebugkey \
+    --ks "$KS" --ks-key-alias androiddebugkey \
     --ks-pass pass:android --key-pass pass:android \
     --out "$OUT/wnacg.apk" "$WORK/app-aligned.apk"
 

@@ -21,6 +21,13 @@ jobs:
             /opt/android-toolchain-api9
           key: ndk-r16b-4479499-standalone
 
+      - name: Cache signing keystore (same cert on every build)
+        id: ks-cache
+        uses: actions/cache@v4
+        with:
+          path: /opt/wnacg-debug.keystore
+          key: wnacg-debug-keystore-v1
+
       - name: Install Android NDK r16b (API 9 compatible)
         if: steps.ndk.outputs.cache-hit != 'true'
         run: |
@@ -76,6 +83,7 @@ jobs:
       - name: Package APK (aapt2 + d8 + apksigner)
         env:
           ANDROID_HOME: /opt/android-sdk
+          WNACG_KEYSTORE: /opt/wnacg-debug.keystore
         run: ./packapk.sh
 
       - name: Upload APK
