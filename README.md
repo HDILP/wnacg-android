@@ -177,5 +177,5 @@ build.sh / build-android.sh / packapk.sh   编译与打包脚本
 - 证书不校验（见上）。如要开启，改 `src/tls.c` 的 x509 校验回调。
 - 仅验证过 `www.wn09.shop`；换镜像站需同步改四处域名宏（src/wnacg.c、Makefile、build.sh、build-android.sh）。
 - NDK r16b 是硬依赖；更老的 NDK 缺 armeabi，更新的 NDK 抬高了最低 API。
-- 封面缩略图所有 API 均可显示：原生二进制把 WebP 封面解码后转存为 PNG，2.3/3.x 的 BitmapFactory 无 WebP 解码器也能显示（BMP 在 2.3 同样解不出，故用 PNG）。
+- 封面缩略图所有 API 均可显示：原生二进制把 WebP 封面解码后转存为 PNG，2.3/3.x 的 BitmapFactory 无 WebP 解码器也能显示（BMP 在 2.3 同样解不出，故用 PNG）。转码链路由 CI 的 `webp_roundtrip` 单测验证（WebP→RGBA→PNG 真数据 round-trip）；2.3 真机封面显示待装包确认。
 - 站点 `f=tag` 只返回第 1 页（翻页为空），属站点行为（见上文 tag 说明）。
