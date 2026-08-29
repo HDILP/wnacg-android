@@ -91,10 +91,12 @@ jobs:
           rm -rf /tmp/webp-clone && mkdir -p /tmp/webp-clone
           git clone --depth 1 --branch v1.3.2 \
             https://github.com/webmproject/libwebp.git /tmp/webp-clone 2>&1 | tail -5
-          echo "=== src/dec after clone ==="
-          ls /tmp/webp-clone/src/dec/ 2>&1 | head
-          echo "=== decode.c after clone? ==="
-          ls -la /tmp/webp-clone/src/dec/decode.c 2>&1 || echo "NO decode.c even after clone"
+          echo "=== src/ subdirs after clone ==="
+          ls -la /tmp/webp-clone/src/ 2>&1
+          echo "=== all .c under src (head 30) ==="
+          find /tmp/webp-clone/src -name '*.c' 2>/dev/null | head -30
+          echo "=== any decode*.c anywhere? ==="
+          find /tmp/webp-clone -name 'decode*.c' 2>/dev/null | head
           echo "=== ndk-build available? ==="
           ls /opt/android-ndk-r16b/ndk-build 2>&1 || echo "NO ndk-build"
           echo "=== cmake available? ==="
