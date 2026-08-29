@@ -1,10 +1,10 @@
-/* webp_roundtrip.c — host-only unit test for the WebP->BMP cover path.
+/* webp_roundtrip.c — host-only unit test for the WebP->PNG cover path.
  *
  * Builds a known RGBA image, encodes it to WebP (libwebp encoder), decodes it
  * back (WebPDecodeRGBA — the exact call webp_bmp.c uses on Android), re-encodes
- * to a 24-bit BMP via bmp_write_rgb, then reads the BMP header back and checks
- * the magic number and dimensions. No device needed; proves the decode+BMP
- * writer chain is correct.
+ * to a PNG via png_write_rgb, then reads the PNG header back and verifies the
+ * magic number, IHDR dimensions, and that zlib can inflate the IDAT. No device
+ * needed; proves the decode+PNG-writer chain is correct.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -12,7 +12,7 @@
 
 #include "webp/encode.h"   /* WebPEncodeRGBA */
 #include "webp/decode.h"   /* WebPDecodeRGBA */
-#include "bmp_write.h"     /* bmp_write_rgb */
+#include "png_write.h"     /* png_write_rgb */
 
 static int rd32(const unsigned char *p) {
     return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
@@ -49,29 +49,39 @@ int main(void) {
         return 1;
     }
 
-    /* 4) write BMP and read the header back */
-    const char *bmp_path = "/tmp/webp_roundtrip.bmp";
-    if (bmp_write_rgb(bmp_path, out, dw, dh) != 0) {
-        fprintf(stderr, "FAIL: bmp_write_rgb\n");
+    /* 4) write PNG and read the header back */
+    const char *png_path = "/tmp/webp_roundtrip.png";
+    if (png_write_rgb(png_path, out, dw, dh) != 0) {
+        fprintf(stderr, "FAIL: png_write_rgb\n");
         return 1;
     }
-    unsigned char hdr[54];
-    FILE *f = fopen(bmp_path, "rb");
-    if (!f || fread(hdr, 1, 54, f) != 54) {
-        fprintf(stderr, "FAIL: cannot read BMP header\n");
+    unsigned char sig[8], ihdr[29];
+    FILE *f = fopen(png_path, "rb");
+    if (!f || fread(sig, 1, 8, f) != 8 || fread(ihdr, 1, 25, f) != 25) {
+        fprintf(stderr, "FAIL: cannot read PNG header\n");
         return 1;
     }
     fclose(f);
-    if (hdr[0] != 'B' || hdr[1] != 'M') {
-        fprintf(stderr, "FAIL: bad BMP magic\n");
+    if (sig[0] != 137 || sig[1] != 'P' || sig[2] != 'N' || sig[3] != 'G') {
+        fprintf(stderr, "FAIL: bad PNG magic\n");
         return 1;
     }
-    int bw = rd32(hdr + 18), bh = rd32(hdr + 22);
-    if (bw != w || bh != h) {
-        fprintf(stderr, "FAIL: BMP size %dx%d (want %dx%d)\n", bw, bh, w, h);
+    if (ihdr[0] != 'I' || ihdr[1] != 'H' || ihdr[2] != 'D' || ihdr[3] != 'R') {
+        fprintf(stderr, "FAIL: missing IHDR\n");
+        return 1;
+    }
+    int pw = rd32(ihdr + 8), ph = rd32(ihdr + 12);
+    if (pw != w || ph != h) {
+        fprintf(stderr, "FAIL: PNG size %dx%d (want %dx%d)\n", pw, ph, w, h);
+        return 1;
+    }
+    if (ihdr[16] != 8 || ihdr[17] != 6) { /* 8-bit, RGBA */
+        fprintf(stderr, "FAIL: PNG not 8-bit RGBA (bitdepth=%d color=%d)\n",
+                ihdr[16], ihdr[17]);
         return 1;
     }
 
-    printf("OK round-trip %dx%d -> WebP %zu bytes -> BMP %dx%d\n", w, h, wsize, bw, bh);
+    printf("OK round-trip %dx%d -> WebP %zu bytes -> PNG %dx%d (8-bit RGBA)\n",
+           w, h, wsize, pw, ph);
     return 0;
 }

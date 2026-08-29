@@ -51,8 +51,8 @@ run_tests() {
     # link every static lib cmake produced (libwebp.a + libsharpyuv.a, etc.)
     WEBP_LIBS=$(ls "$WEBP_LIBDIR"/*.a 2>/dev/null)
     gcc -O2 -std=c99 -Isrc -I"$WEBP_INC" \
-        tests/webp_roundtrip.c src/bmp_write.c -o tests/webp_roundtrip \
-        -Wl,--start-group $WEBP_LIBS -Wl,--end-group -lm
+        tests/webp_roundtrip.c src/png_write.c -o tests/webp_roundtrip \
+        -Wl,--start-group $WEBP_LIBS -Wl,--end-group -lm -lz
     ./tests/webp_roundtrip
 }
 

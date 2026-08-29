@@ -560,6 +560,12 @@ public class MainActivity extends Activity {
             String e = url.substring(dot);
             if (!e.contains("/")) ext = e;
         }
+        // WebP covers are re-encoded to PNG by the native binary (BitmapFactory
+        // on API 9 has no WebP decoder AND no BMP decoder, but PNG decodes fine),
+        // so name them .png to keep the cache honest. The Java side never reads
+        // the extension for decoding — BitmapFactory sniffs the magic bytes — but
+        // matching the real format avoids confusion.
+        if (ext.equalsIgnoreCase(".webp")) ext = ".png";
         File target = new File(dir, id + ext);
         if (target.exists()) return target;
         try {

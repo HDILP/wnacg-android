@@ -90,9 +90,9 @@ echo "[android] compiling wnacg-legacy (ARMv5TE, non-PIE ET_EXEC) for API 9-15 .
     -O2 -std=c99 \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" -I"$WEBP_INC" \
-    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/bmp_write.c \
+    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c \
     -o android/app/src/main/assets/wnacg-legacy \
-    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -Wl,--end-group
+    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group
 "$TC-strip" android/app/src/main/assets/wnacg-legacy 2>/dev/null || true
 echo "[android] wrote android/app/src/main/assets/wnacg-legacy ($(wc -c < android/app/src/main/assets/wnacg-legacy) bytes)"
 
@@ -101,10 +101,10 @@ echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
     -O2 -std=c99 -fPIE \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -I"$BS_INC" -I"$WEBP_INC" \
-    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/bmp_write.c \
+    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c \
     -o "$OUT_LIB" \
     -pie -fPIE \
-    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -Wl,--end-group
+    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group
 
 "$TC-strip" "$OUT_LIB" 2>/dev/null || true
 echo "[android] wrote $OUT_LIB ($(wc -c < "$OUT_LIB") bytes)"

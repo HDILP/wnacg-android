@@ -1,13 +1,14 @@
 /* webp_bmp.c — WebP-aware image downloader.
  *
  * On Android (API < 14 has no WebP decoder in BitmapFactory) the native binary
- * re-encodes WebP covers to a 24-bit BMP so the Java shell can still display
- * them. Non-WebP images pass through untouched.
+ * re-encodes WebP covers to a PNG (PNG decodes on EVERY Android version
+ * including 2.3; BMP does NOT decode on API 9). Non-WebP images pass through
+ * untouched.
  *
- * libwebp decode needs no zlib; the BMP writer (bmp_write.c) is uncompressed, so
- * this file pulls in zero extra dependencies beyond libwebp — but ONLY on
- * Android. On the host build (parser unit tests, no libwebp linked) the WebP
- * decode path is compiled out and save_image_auto is a plain pass-through.
+ * The PNG writer (png_write.c) uses zlib, which the NDK provides as libz — but
+ * ONLY on Android. On the host build (parser unit tests, no libwebp/libz
+ * linked) the WebP decode path is compiled out and save_image_auto is a plain
+ * pass-through.
  */
 #include "webp_bmp.h"
 
@@ -16,7 +17,7 @@
 #include <string.h>
 
 #include "net.h"          /* http_get / http_response / free_http_response */
-#include "bmp_write.h"    /* bmp_write_rgb */
+#include "png_write.h"    /* png_write_rgb */
 
 #ifdef __ANDROID__
 #include "webp/decode.h"  /* WebPDecodeRGBA (only present in the Android build) */
@@ -51,13 +52,13 @@ int save_image_auto(const char *url, const char *out_path) {
             fprintf(stderr, "  [!] WebP decode failed: %s\n", url);
             return -1;
         }
-        int rc = bmp_write_rgb(out_path, rgba, w, h);
+        int rc = png_write_rgb(out_path, rgba, w, h);
         free(rgba);
         if (rc != 0) {
-            fprintf(stderr, "  [!] BMP write failed: %s\n", out_path);
+            fprintf(stderr, "  [!] PNG write failed: %s\n", out_path);
             return -1;
         }
-        fprintf(stderr, "  [i] WebP -> BMP %dx%d: %s\n", w, h, out_path);
+        fprintf(stderr, "  [i] WebP -> PNG %dx%d: %s\n", w, h, out_path);
         return 0;
     }
 #endif /* __ANDROID__ */
