@@ -73,8 +73,9 @@ wnacg download 257351 /sdcard/downloads   # 等价写法
 wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
 ```
 
-> 默认域名：`www.wn09.shop`（在 `src/wnacg.c`、`Makefile`、`build.sh`、`build-android.sh`
-> 四处各一处；改域名四处一起改）。
+> 默认域名：`www.wn09.shop`。编译期只是兜底（`src/wnacg.c` 的 `DEFAULT_API_DOMAIN` 宏，
+> 由 `Makefile`/`build.sh`/`build-android.sh` 传入）；运行期由 Java 壳通过 `WNACG_DOMAIN`
+> 环境变量注入到原生二进制，用户在 App「设置」页可随时改成其他镜像，无需重编译。
 
 > 网络健壮性：图片/封面 CDN（`img*.wnimg1.ru`、`t*.wnacgimg.date`，多为 Cloudflare）在部分
 > 大陆网络会被 SNI 过滤/TLS 指纹拦截，或 IPv6 半可用（connect 通但数据不通 → BearSSL
@@ -187,7 +188,8 @@ build.sh / build-android.sh / packapk.sh / build-webp.sh / build-webp-host.sh
 
 - 单线程下载，大本较慢（2.3 设备本来也不适合并发）。
 - 证书不校验（见上）。如要开启，改 `src/tls.c` 的 x509 校验回调。
-- 仅验证过 `www.wn09.shop`；换镜像站需同步改四处域名宏（src/wnacg.c、Makefile、build.sh、build-android.sh）。
+- 仅验证过 `www.wn09.shop`；换镜像站在 App 内「设置」页改即可（运行期经 `WNACG_DOMAIN` 环境变量注入原生二进制，无需重编译；编译期 `DEFAULT_API_DOMAIN` 宏仅作兜底）。
 - NDK r16b 是硬依赖；更老的 NDK 缺 armeabi，更新的 NDK 抬高了最低 API。
 - 封面缩略图所有 API 均可显示：原生二进制把 WebP 封面解码后转存为 PNG，2.3/3.x 的 BitmapFactory 无 WebP 解码器也能显示（BMP 在 2.3 同样解不出，故用 PNG）。转码链路由 CI 的 `webp_roundtrip` 单测验证（WebP→RGBA→PNG 真数据 round-trip）；2.3 真机封面显示待装包确认。
 - 站点 `f=tag` 只返回第 1 页（翻页为空），属站点行为（见上文 tag 说明）。
+- 2.3 浅色主题：`<application>` 用 `@android:style/Theme.Light`（API 1 起即有，2.3 真机可解析）。**禁用 `Theme.Holo.Light`**——Holo 是 API 11 才有，2.3 上会崩。项目铁律禁 appcompat，故原生 `Theme.Light` 是唯一正解。
