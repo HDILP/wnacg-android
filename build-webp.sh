@@ -64,11 +64,11 @@ echo "[webp] ndk-build (armeabi, api9) ..."
 ( cd "$BUILD" && "$NDK/ndk-build" APP_ABI=armeabi APP_PLATFORM=android-9 -j4 2>&1 | tail -25 ) || \
   { echo "[webp] ndk-build failed"; exit 1; }
 
-DEC_A="$BUILD/obj/local/armeabi/libwebpdecoder.a"
+DEC_A="$BUILD/obj/local/armeabi/libwebpdecoder_static.a"
 if [ -f "$DEC_A" ]; then
   cp "$DEC_A" "$OUT/libwebp.a"
 else
-  echo "[webp] ERROR: libwebpdecoder.a not produced"; exit 1
+  echo "[webp] ERROR: libwebpdecoder_static.a not produced"; exit 1
 fi
 
 echo "[webp] OK -> $OUT/libwebp.a ($(wc -c < "$OUT/libwebp.a") bytes)"
