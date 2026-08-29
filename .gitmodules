@@ -1,0 +1,4 @@
+[submodule "thirdparty/libwebp"]
+	path = thirdparty/libwebp
+	url = https://github.com/webmproject/libwebp.git
+	branch = 1.3.2-stable
