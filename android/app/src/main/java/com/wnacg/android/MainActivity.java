@@ -62,7 +62,7 @@ public class MainActivity extends Activity {
     private static final char COVER_TOKEN = '\u25A3'; // ▣
     private static final String TOKEN_FMT = "\u25A3%d\u25A3"; // ▣N▣
     /** Cover thumbnail target height in dp. */
-    private static final int THUMB_H_DP = 150;
+    private static final int THUMB_H_DP = 300;
     private static final Pattern COVER_LINE =
             Pattern.compile("^\\s*封面:\\s*(\\S+)\\s*$");
     private static final Pattern NUM_RUN = Pattern.compile("\\d+");
