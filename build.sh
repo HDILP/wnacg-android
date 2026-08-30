@@ -15,25 +15,22 @@ set -euo pipefail
 
 cd "$(dirname "$0")"
 
-BS_DIR=thirdparty/bearssl-0.6
-BS_LIB="$BS_DIR/build/libbearssl.a"
-BS_INC="$BS_DIR/inc"
+MBEDTLS_DIR=thirdparty/mbedtls
+MBEDTLS_INC="$MBEDTLS_DIR/include"
+MBEDTLS_LIBS="$MBEDTLS_DIR/build-host/library/libmbedtls.a $MBEDTLS_DIR/build-host/library/libmbedx509.a $MBEDTLS_DIR/build-host/library/libmbedcrypto.a"
 
 DOMAIN='www.wn09.shop'
-CFLAGS="-O2 -Wall -Wextra -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"$DOMAIN\""
+CFLAGS="-O2 -Wall -Wextra -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"$DOMAIN\" -DMBEDTLS_USER_CONFIG_FILE='<mbedtls/mbedtls_user_config.h>'"
 
 build_host() {
-    if [ ! -f "$BS_LIB" ]; then
-        echo "[build] compiling BearSSL (host) ..."
-        (cd "$BS_DIR" && make CC="${CC:-gcc}")
-    fi
+    bash build-mbedtls-host.sh
     echo "[build] compiling ./wnacg (host, gcc) ..."
     # NOTE: libwebp is NOT linked on the host build. webp_bmp.c compiles out the
     # WebP->BMP path under #ifndef __ANDROID__, so the host binary is a plain
     # pass-through for covers. The Android build (build-android.sh) links libwebp.
-    ${CC:-gcc} $CFLAGS -I"$BS_INC" \
+    ${CC:-gcc} $CFLAGS -I"$MBEDTLS_INC" -Isrc \
         src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/img_host.c \
-        -o wnacg "$BS_LIB"
+        -o wnacg $MBEDTLS_LIBS
     echo "[build] host binary ready: ./wnacg"
 }
 
@@ -41,7 +38,7 @@ run_tests() {
     build_host
     echo "[test] parser unit tests ..."
     gcc -O0 -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"\\\"$DOMAIN\\\"\" \
-        -Isrc -I"$BS_INC" tests/parse_test.c src/html.c src/img_host.c -o tests/parse_test
+        -Isrc -I"$MBEDTLS_INC" tests/parse_test.c src/html.c src/img_host.c -o tests/parse_test
     ./tests/parse_test
 
     echo "[test] WebP->BMP cover round-trip ..."

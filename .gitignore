@@ -1,18 +1,11 @@
-thirdparty/bearssl-0.6/build/
-thirdparty/bearssl-0.6/build-android/
-*.o
-
-# Host binary built by `make` (repo root) and the cross-compiled binary dropped
-# into jniLibs by build-android.sh. The jniLibs .so IS source — commit it.
-# Only the host root binary is a build output.
-/wnacg
-
-android/app/build/
+# build artifacts
+wnacg
 tests/parse_test
+tests/webp_roundtrip
+android/app/build/
+thirdparty/*.tar.gz
 
-# Legacy (non-PIE, API 9-15) binary is a CI build product generated into assets/
-# by build-android.sh — unlike jniLibs/libwnacg.so (committed as source), the
-# legacy binary is only meaningful in the packaged APK.
-android/app/src/main/assets/wnacg-legacy
-
-thirdparty/bearssl.tar.gz
+# third-party sources (fetched on demand by build-*.sh scripts)
+thirdparty/mbedtls/
+thirdparty/bearssl-0.6/
+thirdparty/libwebp/

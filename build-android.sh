@@ -42,9 +42,9 @@ UNIFIED_INC="$NDK/sysroot/usr/include"
 UNIFIED_INC_ARCH="$NDK/sysroot/usr/include/arm-linux-androideabi"
 SYSINC="-isystem $UNIFIED_INC -isystem $UNIFIED_INC_ARCH"
 TC="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linux-androideabi"
-BS_DIR=thirdparty/bearssl-0.6
-BS_INC="$BS_DIR/inc"
-BS_LIB_ANDROID="$BS_DIR/build-android/libbearssl.a"
+MBEDTLS_DIR=thirdparty/mbedtls
+MBEDTLS_INC="$MBEDTLS_DIR/include"
+MBEDTLS_LIBS_ANDROID="$MBEDTLS_DIR/build-android/library/libmbedtls.a $MBEDTLS_DIR/build-android/library/libmbedx509.a $MBEDTLS_DIR/build-android/library/libmbedcrypto.a"
 WEBP_INC=thirdparty/libwebp/src
 WEBP_A=thirdparty/libwebp/build-android/libwebp.a
 OUT_DIR=android/app/src/main/jniLibs/armeabi
@@ -52,14 +52,10 @@ OUT_LIB="$OUT_DIR/libwnacg.so"
 
 echo "[android] NDK=$NDK  link API=$LINK_API  (manifest minSdk=$MANIFEST_MIN_SDK)"
 
-# 1) Cross-compile BearSSL for ARM (static lib).
-if [ ! -f "$BS_LIB_ANDROID" ]; then
-    echo "[android] compiling BearSSL (arm) ..."
-    (cd "$BS_DIR" && \
-        make BUILD=build-android \
-             CC="$TC-gcc --sysroot=$SYSROOT $SYSINC" \
-             AR="$TC-ar" RANLIB="$TC-ranlib" \
-             lib)
+# 1) Cross-compile mbedTLS for ARM (static libs).
+if [ ! -f "$MBEDTLS_DIR/build-android/library/libmbedtls.a" ]; then
+    echo "[android] compiling mbedTLS (arm) ..."
+    bash build-mbedtls.sh
 fi
 
 # 1b) Cross-compile libwebp (decode only) for ARM — produces $WEBP_A.
@@ -89,10 +85,11 @@ echo "[android] compiling wnacg-legacy (ARMv5TE, non-PIE ET_EXEC) for API 9-15 .
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
-    -I"$BS_INC" -I"$WEBP_INC" \
+    -DMBEDTLS_USER_CONFIG_FILE='<mbedtls/mbedtls_user_config.h>' \
+    -I"$MBEDTLS_INC" -Isrc -I"$WEBP_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
     -o android/app/src/main/assets/wnacg-legacy \
-    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group
+    -Wl,--start-group $MBEDTLS_LIBS_ANDROID "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group
 "$TC-strip" android/app/src/main/assets/wnacg-legacy 2>/dev/null || true
 echo "[android] wrote android/app/src/main/assets/wnacg-legacy ($(wc -c < android/app/src/main/assets/wnacg-legacy) bytes)"
 
@@ -100,11 +97,12 @@ echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 -fPIE \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
-    -I"$BS_INC" -I"$WEBP_INC" \
+    -DMBEDTLS_USER_CONFIG_FILE='<mbedtls/mbedtls_user_config.h>' \
+    -I"$MBEDTLS_INC" -Isrc -I"$WEBP_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
     -o "$OUT_LIB" \
     -pie -fPIE \
-    -Wl,--start-group "$BS_LIB_ANDROID" "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group
+    -Wl,--start-group $MBEDTLS_LIBS_ANDROID "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group
 
 "$TC-strip" "$OUT_LIB" 2>/dev/null || true
 echo "[android] wrote $OUT_LIB ($(wc -c < "$OUT_LIB") bytes)"
