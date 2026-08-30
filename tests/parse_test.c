@@ -53,6 +53,27 @@ int main(void) {
     for (int i = 0; i < n; i++) free(urls[i]);
     free(urls);
 
+    /* --- build_fallback_url: host rewrite + .w1280.webp suffix --- */
+    printf("[fallback url]\n");
+    {
+        char *f1 = build_fallback_url("https://img5.wnimg1.ru/data/3792/09/001.webp");
+        CHECK(f1 && strcmp(f1,
+              "https://webp.wnacgimg.date/data/3792/09/001.webp.w1280.webp") == 0,
+              "fallback rewrites host to webp.wnacgimg.date + .w1280.webp");
+        free(f1);
+        char *f2 = build_fallback_url("//img5.wnimg1.ru/data/3710/91/001.jpg");
+        CHECK(f2 && strcmp(f2,
+              "//webp.wnacgimg.date/data/3710/91/001.jpg.w1280.webp") == 0,
+              "protocol-relative // host rewritten too");
+        free(f2);
+        /* already a variant -> must NOT append the suffix twice */
+        char *f3 = build_fallback_url("https://webp.wnacgimg.date/data/3792/09/001.webp.w1280.webp");
+        CHECK(f3 && strcmp(f3,
+              "https://webp.wnacgimg.date/data/3792/09/001.webp.w1280.webp") == 0,
+              "already-variant URL not double-suffixed");
+        free(f3);
+    }
+
     /* filename_filter */
     char *fn = filename_filter("a/b:c*?\"<>|d");
     CHECK(strcmp(fn, "a_b_c______d") == 0, "filename_filter replaces illegal chars");

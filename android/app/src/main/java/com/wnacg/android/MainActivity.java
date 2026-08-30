@@ -671,6 +671,10 @@ public class MainActivity extends Activity {
         }
         final Bitmap bmp = decodeScaled(f);
         if (bmp == null) {
+            // A corrupt cached PNG (e.g. written by an older binary with a bad
+            // CRC) would be re-served forever; delete it so the next load
+            // re-fetches and re-encodes a clean copy.
+            f.delete();
             runOnUiThread(new Runnable() { public void run() { card.setCoverFallback("(封面解码失败)"); } });
             return;
         }

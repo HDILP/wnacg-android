@@ -19,6 +19,19 @@ static char *xstrndup(const char *s, size_t n) {
 
 static char *xstrdup(const char *s) { return xstrndup(s, strlen(s)); }
 
+/* Strip ALL whitespace (space/tab/CR/LF) from a string in place. The gallery
+ * HTML sometimes folds image URLs across lines or leaks stray spaces into the
+ * imglist JSON values; a URL with embedded whitespace fails host resolution in
+ * http_get, so we scrub it before the URL is ever used. */
+static void strip_whitespace(char *s) {
+    if (!s) return;
+    size_t j = 0;
+    for (size_t i = 0; s[i]; i++) {
+        if (!isspace((unsigned char)s[i])) s[j++] = s[i];
+    }
+    s[j] = '\0';
+}
+
 /* Find first occurrence of needle in haystack[hlen], starting at off.
  * Returns pointer into haystack or NULL. */
 static const char *find_from(const char *h, size_t hlen, size_t off,
@@ -311,10 +324,9 @@ static int is_fake_img(const char *url) {
  * Returns a malloc'd string (caller frees); on alloc failure returns NULL. */
 static char *rewrite_img_host(const char *url) {
     const char *host_start;
-    int has_scheme = 0;
-    if (strncmp(url, "https://", 8) == 0) { host_start = url + 8; has_scheme = 1; }
-    else if (strncmp(url, "http://", 7) == 0) { host_start = url + 7; has_scheme = 1; }
-    else if (strncmp(url, "//", 2) == 0) { host_start = url + 2; has_scheme = 0; }
+    if (strncmp(url, "https://", 8) == 0) { host_start = url + 8; }
+    else if (strncmp(url, "http://", 7) == 0) { host_start = url + 7; }
+    else if (strncmp(url, "//", 2) == 0) { host_start = url + 2; }
     else return xstrdup(url); /* no scheme, leave as-is */
 
     const char *path = strchr(host_start, '/');
@@ -337,25 +349,25 @@ char *build_fallback_url(const char *url) {
     char *ru = rewrite_img_host(url);
     if (!ru) return NULL;
     size_t ul = strlen(ru);
-    if (ul >= 13 && strcmp(ru + ul - 13, ".w1280.webp") == 0) {
+    static const char SUF[] = ".w1280.webp"; /* 11 chars */
+    if (ul >= 11 && strcmp(ru + ul - 11, SUF) == 0) {
         return ru; /* already a variant URL */
     }
-    char *vu = malloc(ul + 13); /* 12 chars + NUL */
+    char *vu = malloc(ul + 12); /* 11 chars + NUL */
     if (!vu) { free(ru); return NULL; }
     memcpy(vu, ru, ul);
-    memcpy(vu + ul, ".w1280.webp", 12);
-    vu[ul + 12] = '\0';
+    memcpy(vu + ul, SUF, 12);   /* 11 chars + NUL */
     free(ru);
     return vu;
 }
 
 /* Extract the page-declared image host: `var fast_img_host='...';`. This is the
- * site's REAL image host (e.g. https://img5.wnimg.ru, or img5.wnimg1.ru in
- * newer pages). It is used ONLY as the PRIMARY download target; when that host
- * is unreachable (2.3 BearSSL / Cloudflare TLS fingerprint), download_image()
- * falls back to g_img_host + .w1280.webp via build_fallback_url(). We must NOT
- * substitute g_img_host here, or the "fallback" would become a hardcoded
- * override. Defaults to https://img5.wnimg.ru when the page omits it. */
+ * site's REAL image host (img5.wnimg1.ru). It is used ONLY as the PRIMARY
+ * download target; when that host is unreachable (2.3 BearSSL / Cloudflare TLS
+ * fingerprint), download_image() falls back to g_img_host + .w1280.webp via
+ * build_fallback_url(). We must NOT substitute g_img_host here, or the
+ * "fallback" would become a hardcoded override. Defaults to
+ * https://img5.wnimg1.ru when the page omits it. */
 static char *extract_fast_img_host(const char *html, size_t hlen) {
     const char *k = find_from(html, hlen, 0, "fast_img_host");
     if (k) {
@@ -367,11 +379,13 @@ static char *extract_fast_img_host(const char *html, size_t hlen) {
             const char *start = p;
             while (p < html + hlen && *p != q) p++;
             if (p < html + hlen) {
-                return xstrndup(start, (size_t)(p - start));
+                char *v = xstrndup(start, (size_t)(p - start));
+                if (v) strip_whitespace(v);
+                return v;
             }
         }
     }
-    return xstrdup("https://img5.wnimg.ru");
+    return xstrdup("https://img5.wnimg1.ru");
 }
 
 int parse_imglist(const char *html, char ***out_urls, int *out_count) {
@@ -455,6 +469,7 @@ int parse_imglist(const char *html, char ***out_urls, int *out_count) {
         size_t ulen = (size_t)(qe - q);
         char *url = xstrndup(q, ulen);
         if (url) {
+            strip_whitespace(url);
             if (!is_fake_img(url)) {
                 /* prepend https: if starts with // */
                 if (strncmp(url, "//", 2) == 0) {

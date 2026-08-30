@@ -83,7 +83,7 @@ wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
 > 仍强制 https）；TCP 连接 IPv4 优先 + 单地址 5s 超时。这是 2026-08-29 真机实测的修复。
 >
 > 图片图床是**回落**而非写死绕过：解析阶段保留站点声明的真实图床（`var fast_img_host`，
-> 如 `img5.wnimg.ru` / `img5.wnimg1.ru`）作为主下载地址；单张图下载失败（如 2.3 BearSSL
+> 即原图主图床 `img5.wnimg1.ru`）作为主下载地址；单张图下载失败（如 2.3 BearSSL
 > 指纹被掐）时，自动改走可通达镜像 `webp.wnacgimg.date` 并请求 `.w1280.webp` 转码变体重试一次
 > （`build_fallback_url` 在 `html.c`，由 `download_image` 调用）。镜像 host 默认 `webp.wnacgimg.date`，
 > 可在 App「设置」页经 `WNACG_IMG_HOST` 环境变量覆盖。封面（`t*.wnacgimg.date`）无替代线路，
