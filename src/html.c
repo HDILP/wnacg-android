@@ -304,6 +304,32 @@ static int is_fake_img(const char *url) {
     return strstr(url, "shoucang.jpg") != NULL;
 }
 
+/* Rewrite the host part of an image URL to g_img_host. The gallery HTML may
+ * hardcode the unreachable img5.wnimg1.ru / img5.wnimg.ru (or use the
+ * fast_img_host JS variable, already substituted to g_img_host upstream), so
+ * we normalise the host unconditionally. Keeps scheme (https: or //) and path.
+ * Returns a malloc'd string (caller frees); on alloc failure returns NULL. */
+static char *rewrite_img_host(const char *url) {
+    const char *host_start;
+    int has_scheme = 0;
+    if (strncmp(url, "https://", 8) == 0) { host_start = url + 8; has_scheme = 1; }
+    else if (strncmp(url, "http://", 7) == 0) { host_start = url + 7; has_scheme = 1; }
+    else if (strncmp(url, "//", 2) == 0) { host_start = url + 2; has_scheme = 0; }
+    else return xstrdup(url); /* no scheme, leave as-is */
+
+    const char *path = strchr(host_start, '/');
+    size_t host_len = path ? (size_t)(path - host_start) : strlen(host_start);
+    size_t new_len = strlen(g_img_host);
+    size_t pre = (size_t)(host_start - url);
+    size_t post = strlen(host_start) - host_len; /* includes leading '/' or 0 */
+    char *out = malloc(pre + new_len + post + 1);
+    if (!out) return NULL;
+    memcpy(out, url, pre);
+    memcpy(out + pre, g_img_host, new_len);
+    memcpy(out + pre + new_len, host_start + host_len, post + 1); /* copies NUL */
+    return out;
+}
+
 /* The site advertises its image host via `var fast_img_host='...';`, but the
  * default value (img5.wnimg1.ru) is unreachable from many networks / 2.3
  * BearSSL (Cloudflare blocks the non-browser TLS fingerprint). We ignore the
@@ -412,6 +438,10 @@ int parse_imglist(const char *html, char ***out_urls, int *out_count) {
                     cap *= 2;
                     urls = realloc(urls, cap * sizeof(char *));
                 }
+                /* Rewrite the host to g_img_host (unreachable img5.wnimg1.ru /
+                 * img5.wnimg.ru hardcoded in the gallery HTML gets normalised). */
+                char *ru = rewrite_img_host(url);
+                if (ru) { free(url); url = ru; }
                 /* Request the .w1280.webp variant: the reachable image host
                  * (webp.wnacgimg.date) only serves the transcoded .w1280.webp
                  * variant for BOTH .webp and .jpg originals (e.g.
@@ -420,10 +450,11 @@ int parse_imglist(const char *html, char ***out_urls, int *out_count) {
                  * So unconditionally append .w1280.webp unless already present. */
                 size_t ul = strlen(url);
                 if (ul < 13 || strcmp(url + ul - 13, ".w1280.webp") != 0) {
-                    char *vu = malloc(ul + 9 + 1);
+                    char *vu = malloc(ul + 13); /* 12 chars + NUL */
                     if (vu) {
                         memcpy(vu, url, ul);
-                        memcpy(vu + ul, ".w1280.webp", 10); /* includes NUL */
+                        memcpy(vu + ul, ".w1280.webp", 12);
+                        vu[ul + 12] = '\0';
                         free(url);
                         url = vu;
                     }
