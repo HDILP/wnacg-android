@@ -32,7 +32,7 @@ build_host() {
     # WebP->BMP path under #ifndef __ANDROID__, so the host binary is a plain
     # pass-through for covers. The Android build (build-android.sh) links libwebp.
     ${CC:-gcc} $CFLAGS -I"$BS_INC" \
-        src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c \
+        src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/img_host.c \
         -o wnacg "$BS_LIB"
     echo "[build] host binary ready: ./wnacg"
 }
@@ -40,8 +40,8 @@ build_host() {
 run_tests() {
     build_host
     echo "[test] parser unit tests ..."
-    gcc -O0 -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
-        -Isrc -I"$BS_INC" tests/parse_test.c src/html.c -o tests/parse_test
+    gcc -O0 -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"\\\"$DOMAIN\\\"\" \
+        -Isrc -I"$BS_INC" tests/parse_test.c src/html.c src/img_host.c -o tests/parse_test
     ./tests/parse_test
 
     echo "[test] WebP->BMP cover round-trip ..."

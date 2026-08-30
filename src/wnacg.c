@@ -21,18 +21,8 @@ void init_api_domain(void) {
     if (e && *e) g_api_domain = e;
 }
 
-#ifndef DEFAULT_IMG_HOST
-#define DEFAULT_IMG_HOST "webp.wnacgimg.date"
-#endif
-/* Runtime image-CDN host override. The site's default fast_img_host
- * (img5.wnimg1.ru) is unreachable from many networks / 2.3 BearSSL (Cloudflare
- * blocks the non-browser TLS fingerprint); webp.wnacgimg.date serves the
- * .w1280.webp variant and is reachable. Set via WNACG_IMG_HOST. */
-const char *g_img_host = DEFAULT_IMG_HOST;
-void init_img_host(void) {
-    const char *e = getenv("WNACG_IMG_HOST");
-    if (e && *e) g_img_host = e;
-}
+/* g_img_host / init_img_host live in src/img_host.c (own translation unit) so
+ * the standalone parser test (html.c without wnacg.c) still links them. */
 
 /* Percent-encode a string for use in a URL query (RFC 3986 unsafe set). */
 static void url_encode(const char *src, char *dst, size_t dstcap) {

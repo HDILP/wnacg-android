@@ -414,10 +414,12 @@ int parse_imglist(const char *html, char ***out_urls, int *out_count) {
                 }
                 /* Request the .w1280.webp variant: the reachable image host
                  * (webp.wnacgimg.date) only serves the transcoded .w1280.webp
-                 * variant, not the bare .webp path. Skip if already suffixed. */
+                 * variant for BOTH .webp and .jpg originals (e.g.
+                 * 001.webp.w1280.webp and 001.jpg.w1280.webp are both valid;
+                 * the bare 001.jpg / 001.webp paths are NOT served there).
+                 * So unconditionally append .w1280.webp unless already present. */
                 size_t ul = strlen(url);
-                if (ul >= 5 && strcmp(url + ul - 5, ".webp") == 0 &&
-                    (ul < 13 || strcmp(url + ul - 13, ".w1280.webp") != 0)) {
+                if (ul < 13 || strcmp(url + ul - 13, ".w1280.webp") != 0) {
                     char *vu = malloc(ul + 9 + 1);
                     if (vu) {
                         memcpy(vu, url, ul);
