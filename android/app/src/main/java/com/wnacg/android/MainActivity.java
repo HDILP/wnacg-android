@@ -376,9 +376,23 @@ public class MainActivity extends Activity {
                 t.setTextSize(13);
                 t.setTypeface(android.graphics.Typeface.MONOSPACE);
                 t.setText(text);
-                try {
-                    t.setTextIsSelectable(true);
-                } catch (Throwable e) { /* API 11+ */ }
+                // Long-press an info line (download progress / error logs shown
+                // under the cards) to copy the WHOLE line — handy for pasting
+                // failure logs to a developer. Do NOT setTextIsSelectable here:
+                // that makes long-press start a drag-selection instead, which is
+                // awkward for a whole-line copy.
+                t.setOnLongClickListener(new android.view.View.OnLongClickListener() {
+                    public boolean onLongClick(android.view.View v) {
+                        CharSequence s = ((TextView) v).getText();
+                        if (s == null || s.length() == 0) return false;
+                        android.content.ClipboardManager cm =
+                            (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                        cm.setText(s);
+                        android.widget.Toast.makeText(MainActivity.this,
+                                "已复制该行", android.widget.Toast.LENGTH_SHORT).show();
+                        return true;
+                    }
+                });
                 results.addView(t);
             }
         });
