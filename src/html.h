@@ -2,6 +2,7 @@
 #define WNACG_HTML_H
 
 #include <stddef.h>
+#include "net.h"
 
 /* A single search result entry. */
 typedef struct {

@@ -5,8 +5,7 @@
 #include <string.h>
 #include <ctype.h>
 
-/* defined in wnacg.c; runtime image-CDN host override (WNACG_IMG_HOST). */
-extern const char *g_img_host;
+/* g_img_host is declared in net.h (included via html.h). */
 
 /* ---------- small string helpers ---------- */
 

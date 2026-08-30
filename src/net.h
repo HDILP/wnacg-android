@@ -74,4 +74,12 @@ void free_http_response(http_response *r);
 extern const char *g_api_domain;
 void init_api_domain(void);
 
+/* Runtime image-CDN host. Same mechanism as g_api_domain: initialized from
+ * WNACG_IMG_HOST (set by the Java shell); falls back to DEFAULT_IMG_HOST
+ * (compile-time macro, webp.wnacgimg.date) when unset. The site's default
+ * fast_img_host (img5.wnimg1.ru) is unreachable from many networks / 2.3
+ * BearSSL, so html.c ignores the page-provided host and uses this instead. */
+extern const char *g_img_host;
+void init_img_host(void);
+
 #endif /* WNACG_NET_H */
