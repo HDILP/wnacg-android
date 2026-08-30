@@ -113,7 +113,6 @@
             android:layout_height="wrap_content"
             android:textSize="14sp"
             android:typeface="monospace"
-            android:textIsSelectable="true"
             android:text="" />
     </ScrollView>
 </LinearLayout>

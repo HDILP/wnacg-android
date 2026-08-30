@@ -132,6 +132,13 @@ public class MainActivity extends Activity {
 
         cmd = (EditText) findViewById(R.id.cmd);
         out = (TextView) findViewById(R.id.output);
+        // textIsSelectable isn't available until API 11; enable it at runtime
+        // so the log can be long-pressed → copy (works on 2.3 too).
+        try {
+            out.setTextIsSelectable(true);
+        } catch (Throwable t) {
+            // older platform without the API: ignore
+        }
         logScroll = (ScrollView) findViewById(R.id.logscroll);
         resScroll = (ScrollView) findViewById(R.id.scroll);
         results = (LinearLayout) findViewById(R.id.results);
