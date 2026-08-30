@@ -361,31 +361,48 @@ char *build_fallback_url(const char *url) {
     return vu;
 }
 
-/* Extract the page-declared image host: `var fast_img_host='...';`. This is the
- * site's REAL image host (img5.wnimg1.ru). It is used ONLY as the PRIMARY
+/* Extract the page-declared image host: `var fast_img_host='...';`. On the
+ * real site the imglist sits inside document.writeln("..."), so the value is
+ * written as `fast_img_host=\"\"` — i.e. an EMPTY string with its quotes
+ * escaped as \". The gallery URLs are then `fast_img_host+\"//img5.wnimg1.ru/
+ * data/.../NNN.webp\"`, i.e. they carry their own full host, so an empty
+ * fast_img_host is correct and expected. This is used ONLY as the PRIMARY
  * download target; when that host is unreachable (2.3 BearSSL / Cloudflare TLS
  * fingerprint), download_image() falls back to g_img_host + .w1280.webp via
  * build_fallback_url(). We must NOT substitute g_img_host here, or the
- * "fallback" would become a hardcoded override. Defaults to
- * https://img5.wnimg1.ru when the page omits it. */
+ * "fallback" would become a hardcoded override. Defaults to "" when the page
+ * omits the variable (URLs already carry their own host). */
 static char *extract_fast_img_host(const char *html, size_t hlen) {
     const char *k = find_from(html, hlen, 0, "fast_img_host");
     if (k) {
-        const char *p = k + 13;
-        while (p < html + hlen && *p != '\'' && *p != '"') p++;
-        if (p < html + hlen) {
-            char q = *p;
-            p++;
-            const char *start = p;
-            while (p < html + hlen && *p != q) p++;
-            if (p < html + hlen) {
-                char *v = xstrndup(start, (size_t)(p - start));
-                if (v) strip_whitespace(v);
-                return v;
+        const char *eq = k + 13;
+        while (eq < html + hlen && *eq != '=') eq++;
+        if (eq < html + hlen) {
+            eq++; /* past '=' */
+            const char *semi = eq;
+            while (semi < html + hlen && *semi != ';' && *semi != '\n') semi++;
+            char *raw = xstrndup(eq, (size_t)(semi - eq));
+            if (raw) {
+                /* unescape \" -> " (document.writeln escaping) */
+                size_t j = 0;
+                for (size_t i = 0; raw[i]; i++) {
+                    if (raw[i] == '\\' && raw[i + 1] == '"') { raw[j++] = '"'; i++; }
+                    else raw[j++] = raw[i];
+                }
+                raw[j] = '\0';
+                /* strip one surrounding quote pair ('...' or "...") */
+                size_t n = strlen(raw);
+                if (n >= 2 && ((raw[0] == '"' && raw[n - 1] == '"') ||
+                               (raw[0] == '\'' && raw[n - 1] == '\''))) {
+                    memmove(raw, raw + 1, n - 2);
+                    raw[n - 2] = '\0';
+                }
+                strip_whitespace(raw);
+                return raw;
             }
         }
     }
-    return xstrdup("https://img5.wnimg1.ru");
+    return xstrdup("");
 }
 
 int parse_imglist(const char *html, char ***out_urls, int *out_count) {

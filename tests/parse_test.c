@@ -74,6 +74,21 @@ int main(void) {
         free(f3);
     }
 
+    /* --- real-site imglist: document.writeln + fast_img_host=\"\" (empty) --- */
+    {
+        char *rhtml = read_file("tests/sample_gallery_real.html");
+        char **rurls = NULL; int rn = 0;
+        parse_imglist(rhtml, &rurls, &rn);
+        printf("[imglist real site]\n");
+        CHECK(rn == 3, "real site: 3 images (shoucang.jpg filtered)");
+        CHECK(rn >= 1 && strcmp(rurls[0],
+              "https://img5.wnimg1.ru/data/3727/88/001.webp") == 0,
+              "real site: url keeps own host, no backslash leak");
+        for (int i = 0; i < rn; i++) free(rurls[i]);
+        free(rurls);
+        free(rhtml);
+    }
+
     /* filename_filter */
     char *fn = filename_filter("a/b:c*?\"<>|d");
     CHECK(strcmp(fn, "a_b_c______d") == 0, "filename_filter replaces illegal chars");
