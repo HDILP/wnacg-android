@@ -87,10 +87,7 @@ wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
 > 指纹被掐）时，自动改走可通达镜像 `webp.wnacgimg.date` 并请求 `.w1280.webp` 转码变体重试一次
 > （`build_fallback_url` 在 `html.c`，由 `download_image` 调用）。镜像 host 默认 `webp.wnacgimg.date`，
 > 可在 App「设置」页经 `WNACG_IMG_HOST` 环境变量覆盖。封面（`t*.wnacgimg.date`）无替代线路，
-> 失败即失败，不影响整本下载。整本图片无论主图床还是镜像变体，只要源是 WebP（`.w1280.webp`
-> 变体即 WebP），都由 `save_image_auto()` 在 Android 上解码后**转存为 PNG**，落盘后缀强制
-> `.png`——因 2.3 的 BitmapFactory 无 WebP 解码器，现代 Android 对裸 `.w1280.webp` 变体也偶有
-> 解码异常；PNG 全版本通吃。封面同理（见已知限制「封面」条）。
+> 失败即失败，不影响整本下载。
 
 > 关于 `tag`：旧版路由 `/albums-index-page-N-tag-X.html` 在当前移动站已失效（返回 200 但无结果），现改为走搜索接口的 `f=tag` 端点，返回结构与 `search` 一致。限制：站点对 `f=tag` 只返回第 1 页（第 2 页起服务端返回空），所以 `tag` 模式实际只能看第一页结果——这是站点行为，非解析 bug。需要更多结果时可改用 `search`。
 

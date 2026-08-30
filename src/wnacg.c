@@ -44,49 +44,54 @@ static void url_encode(const char *src, char *dst, size_t dstcap) {
     dst[j] = '\0';
 }
 
-/* Download a single image URL to the given path.
- * Implements host fallback AND WebP->PNG transcoding:
- *  - Primary URL first; if it fails (e.g. site default img5.wnimg1.ru
- *    unreachable from 2.3 BearSSL / many networks), retry once via the
- *    reachable mirror g_img_host with the .w1280.webp variant.
- *  - save_image_auto() re-encodes WebP to PNG on Android (BitmapFactory on
- *    API < 14 has no WebP decoder, and even modern Androids can choke on the
- *    bare .w1280.webp variant). The caller passes out_path with a .png suffix
- *    when the source is WebP; see cmd_download's url_to_path(). */
+/* Download a single image URL to the given path (raw bytes, no transcode —
+ * covers are transcoded separately by cmd_cover's save_image_auto). Implements
+ * host fallback: if the primary URL fails (e.g. site default img5.wnimg1.ru
+ * unreachable from 2.3 BearSSL / many networks), retry once via the reachable
+ * mirror g_img_host with the .w1280.webp variant. */
 static int download_image(const char *url, const char *out_path) {
-    if (save_image_auto(url, out_path) == 0) return 0;
+    char referer[128];
+    snprintf(referer, sizeof(referer), "https://%s/", g_api_domain);
+    http_response r;
+    if (http_get(url, referer, NULL, 5, &r) == 0 &&
+        r.status == 200 && r.body_len > 0) {
+        FILE *f = fopen(out_path, "wb");
+        if (!f) {
+            fprintf(stderr, "  [!] cannot open %s\n", out_path);
+            free_http_response(&r);
+            return -1;
+        }
+        fwrite(r.body, 1, r.body_len, f);
+        fclose(f);
+        free_http_response(&r);
+        return 0;
+    }
+    free_http_response(&r);
 
     /* primary failed -> try the mirror (.w1280.webp variant on g_img_host) */
     char *fb = build_fallback_url(url);
     if (fb && strcmp(fb, url) != 0) {
         fprintf(stderr, "  [~] 主图床失败, 回落镜像: %s\n", fb);
-        if (save_image_auto(fb, out_path) == 0) { free(fb); return 0; }
+        http_response fr;
+        if (http_get(fb, referer, NULL, 5, &fr) == 0 &&
+            fr.status == 200 && fr.body_len > 0) {
+            FILE *f = fopen(out_path, "wb");
+            if (f) {
+                fwrite(fr.body, 1, fr.body_len, f);
+                fclose(f);
+                free_http_response(&fr);
+                free(fb);
+                return 0;
+            }
+        }
+        free_http_response(&fr);
         fprintf(stderr, "  [!] network error (fallback): %s\n", fb);
-    } else {
-        fprintf(stderr, "  [!] network error: %s\n", url);
+        free(fb);
+        return -1;
     }
     free(fb);
+    fprintf(stderr, "  [!] network error: %s\n", url);
     return -1;
-}
-
-/* Map a primary image URL to its on-disk path. WebP sources (anything whose
- * mirror fallback ends in .webp, i.e. the .w1280.webp variant) are stored as
- * .png because save_image_auto() transcodes them to PNG on Android; other
- * sources keep their original extension. */
-static void url_to_path(char *out, size_t outsz, const char *dir,
-                        int index, const char *url) {
-    char num[16];
-    snprintf(num, sizeof(num), "%04d", index + 1);
-    const char *ext = ".png";
-    char *fb = build_fallback_url(url);
-    int becomes_webp = fb && (strlen(fb) >= 5 &&
-                              strcmp(fb + strlen(fb) - 5, ".webp") == 0);
-    free(fb);
-    if (!becomes_webp) {
-        const char *dot = strrchr(url, '.');
-        ext = (dot && strlen(dot) <= 6) ? dot : "";
-    }
-    snprintf(out, outsz, "%s/%s%s", dir, num, ext);
 }
 
 static int ensure_dir(const char *path) {
@@ -274,8 +279,13 @@ int cmd_download(int argc, char **argv) {
     printf("开始下载 漫画 %ld: %d 张到 %s\n", id, n, dir);
     int ok = 0, fail = 0;
     for (int i = 0; i < n; i++) {
+        char num[16];
+        snprintf(num, sizeof(num), "%04d", i + 1);
+        /* keep original extension if present */
+        const char *dot = strrchr(urls[i], '.');
+        const char *ext = (dot && strlen(dot) <= 6) ? dot : "";
         char outp[1100];
-        url_to_path(outp, sizeof(outp), dir, i, urls[i]);
+        snprintf(outp, sizeof(outp), "%s/%s%s", dir, num, ext);
         printf("  (%d/%d) %s\n", i + 1, n, urls[i]);
         if (download_image(urls[i], outp) == 0) ok++;
         else fail++;
