@@ -45,12 +45,6 @@ cp src/mbedtls_user_config.h "$MBEDTLS_DIR/include/mbedtls/mbedtls_user_config.h
 
 make -C "$MBEDTLS_DIR" clean >/dev/null 2>&1 || true
 
-export CFLAGS='--sysroot='"$SYSROOT"' '"$SYSINC"' -O2 -march=armv5te -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\"'
+export CFLAGS='--sysroot='"$SYSROOT"' '"$SYSINC"' -O2 -march=armv5te -DMBEDTLS_USER_CONFIG_FILE=\\\"mbedtls/mbedtls_user_config.h\\\"'
 make -C "$MBEDTLS_DIR/library" -j4 CC="$TC-gcc" AR="$TC-ar"
-
-mkdir -p "$OUT/library"
-cp "$MBEDTLS_DIR/library/libmbedtls.a" "$OUT/library/"
-cp "$MBEDTLS_DIR/library/libmbedx509.a" "$OUT/library/"
-cp "$MBEDTLS_DIR/library/libmbedcrypto.a" "$OUT/library/"
-
 echo "[mbedtls-android] OK -> $OUT/library/libmbedtls.a"
