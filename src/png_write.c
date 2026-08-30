@@ -25,13 +25,6 @@ static void crc_init(void) {
     crc_table_done = 1;
 }
 
-static uint32_t crc32_buf(const unsigned char *buf, size_t len) {
-    uint32_t c = 0xffffffffU;
-    for (size_t i = 0; i < len; i++)
-        c = crc_table[(c ^ buf[i]) & 0xff] ^ (c >> 8);
-    return c ^ 0xffffffffU;
-}
-
 /* chunk = length(4 BE) + type(4) + data + crc(4) over type+data */
 static int write_chunk(FILE *f, const char *type,
                        const unsigned char *data, uint32_t len) {
@@ -43,8 +36,10 @@ static int write_chunk(FILE *f, const char *type,
     memcpy(hdr + 4, type, 4);
     if (fwrite(hdr, 1, 8, f) != 8) return -1;
     if (len && fwrite(data, 1, len, f) != len) return -1;
-    uint32_t crc = crc32_buf((const unsigned char *)type, 4);
-    /* continue crc over data */
+    uint32_t crc = 0xffffffffU;
+    /* CRC covers the chunk type (4 bytes) then the chunk data, finalized once */
+    for (int t = 0; t < 4; t++)
+        crc = crc_table[(crc ^ (unsigned char)type[t]) & 0xff] ^ (crc >> 8);
     for (uint32_t i = 0; i < len; i++)
         crc = crc_table[(crc ^ data[i]) & 0xff] ^ (crc >> 8);
     crc ^= 0xffffffffU;

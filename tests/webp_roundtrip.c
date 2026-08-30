@@ -81,7 +81,52 @@ int main(void) {
         return 1;
     }
 
-    printf("OK round-trip %dx%d -> WebP %zu bytes -> PNG %dx%d (8-bit RGBA)\n",
+    /* 5) verify every chunk's CRC32 — Android's libpng rejects bad CRCs, so a
+     *    writer that emits wrong CRCs passes magic/IHDR/zlib checks yet fails
+     *    to decode on device. This catches that class of bug. */
+    {
+        static uint32_t tbl[256]; static int tbl_done = 0;
+        if (!tbl_done) {
+            for (uint32_t n = 0; n < 256; n++) {
+                uint32_t c = n;
+                for (int k = 0; k < 8; k++)
+                    c = (c & 1) ? (0xedb88320U ^ (c >> 1)) : (c >> 1);
+                tbl[n] = c;
+            }
+            tbl_done = 1;
+        }
+        FILE *g = fopen(png_path, "rb");
+        if (!g) { fprintf(stderr, "FAIL: cannot reopen PNG for CRC check\n"); return 1; }
+        fseek(g, 0, SEEK_END);
+        long fsz = ftell(g);
+        fseek(g, 0, SEEK_SET);
+        unsigned char *whole = (unsigned char *)malloc((size_t)fsz);
+        if (!whole || fread(whole, 1, (size_t)fsz, g) != (size_t)fsz) {
+            fprintf(stderr, "FAIL: cannot read whole PNG\n"); return 1;
+        }
+        fclose(g);
+        long pos = 8;
+        int crc_bad = 0;
+        while (pos + 12 <= fsz) {
+            uint32_t ln = rd32be(whole + pos);
+            if (pos + 12 + (long)ln > fsz) break;
+            uint32_t c = 0xffffffffU;
+            for (long i = pos + 4; i < pos + 8 + (long)ln; i++)
+                c = tbl[(c ^ whole[i]) & 0xff] ^ (c >> 8);
+            c ^= 0xffffffffU;
+            uint32_t got = rd32be(whole + pos + 8 + ln);
+            char t[5] = { whole[pos+4], whole[pos+5], whole[pos+6], whole[pos+7], 0 };
+            if (c != got) {
+                fprintf(stderr, "FAIL: bad CRC on %s (want %08x got %08x)\n", t, c, got);
+                crc_bad = 1;
+            }
+            pos += 12 + (long)ln;
+        }
+        free(whole);
+        if (crc_bad) return 1;
+    }
+
+    printf("OK round-trip %dx%d -> WebP %zu bytes -> PNG %dx%d (8-bit RGBA, CRC verified)\n",
            w, h, wsize, pw, ph);
     return 0;
 }
