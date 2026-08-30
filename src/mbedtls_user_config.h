@@ -69,4 +69,8 @@
 #define MBEDTLS_SSL_IN_CONTENT_LEN   16384
 #define MBEDTLS_SSL_OUT_CONTENT_LEN  4096
 
+/* Disable self-tests: they pull in libc rand() (rsa.c myrand) which fails to
+ * link on bionic, and we never run the self-tests in the app anyway. */
+#undef MBEDTLS_SELF_TEST
+
 #endif /* MBEDTLS_USER_CONFIG_H */
