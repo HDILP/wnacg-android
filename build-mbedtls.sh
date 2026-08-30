@@ -52,7 +52,7 @@ rm -f "$MBEDTLS_DIR/library"/*.o "$MBEDTLS_DIR/library"/*.a "$MBEDTLS_DIR/librar
 # -DMBEDTLS_USER_CONFIG_FILE must expand to a quoted filename; the shell strips
 # one layer of backslash escaping, leaving -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/...\"
 # (single backslash-quote pair, identical to build-mbedtls-host.sh).
-export CFLAGS='--sysroot='"$SYSROOT"' '"$SYSINC"' -O2 -march=armv5te -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\"'
+export CFLAGS='--sysroot='"$SYSROOT"' '"$SYSINC"' -O2 -march=armv5te -std=gnu99 -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\"'
 make -C "$MBEDTLS_DIR/library" -j4 CC="$TC-gcc" AR="$TC-ar"
 
 mkdir -p "$OUT/library"
