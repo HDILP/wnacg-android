@@ -43,10 +43,15 @@ TC="$NDK/toolchains/arm-linux-androideabi-4.9/prebuilt/linux-x86_64/bin/arm-linu
 echo "[mbedtls-android] cross-compiling static libraries for ARM (API 9/16) ..."
 cp src/mbedtls_user_config.h "$MBEDTLS_DIR/include/mbedtls/mbedtls_user_config.h"
 
-make -C "$MBEDTLS_DIR" clean >/dev/null 2>&1 || true
+# Clean ALL build artifacts first — the host build (build-mbedtls-host.sh)
+# leaves x86_64 .o/.a in the same library/ dir; if we don't remove them make
+# sees libmbedtls.a as up-to-date and skips the ARM compile, then we'd copy
+# x86 archives into build-android/ (link error: incompatible target).
+rm -f "$MBEDTLS_DIR/library"/*.o "$MBEDTLS_DIR/library"/*.a "$MBEDTLS_DIR/library"/*.so
 
 # -DMBEDTLS_USER_CONFIG_FILE must expand to a quoted filename; the shell strips
-# one layer of backslash escaping, leaving -DMBEDTLS_USER_CONFIG_FILE="mbedtls/..."
+# one layer of backslash escaping, leaving -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/...\"
+# (single backslash-quote pair, identical to build-mbedtls-host.sh).
 export CFLAGS='--sysroot='"$SYSROOT"' '"$SYSINC"' -O2 -march=armv5te -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\"'
 make -C "$MBEDTLS_DIR/library" -j4 CC="$TC-gcc" AR="$TC-ar"
 
