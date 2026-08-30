@@ -48,8 +48,8 @@ int main(void) {
     printf("[imglist]\n");
     CHECK(n == 4, "4 real images (shoucang.jpg filtered)");
     CHECK(strstr(urls[0], "https://") != NULL, "url0 has https prefix");
-    CHECK(strstr(urls[2], "https://img5.wnimg.ru/data/257351/02.jpg") != NULL,
-          "fast_img_host substituted with page host");
+    CHECK(strstr(urls[2], "webp.wnacgimg.date/data/257351/02.jpg.w1280.webp") != NULL,
+          "img host overridden to webp.wnacgimg.date + .w1280.webp variant appended");
     for (int i = 0; i < n; i++) free(urls[i]);
     free(urls);
 
