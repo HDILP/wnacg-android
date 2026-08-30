@@ -34,6 +34,13 @@ void free_search_result(search_result *s);
  * Returns 0 on success with out_urls/out_count populated (caller frees). */
 int parse_imglist(const char *html, char ***out_urls, int *out_count);
 
+/* Build a fallback image URL for a primary URL that failed to download:
+ * rewrite the host to g_img_host (the reachable mirror, defaults to
+ * webp.wnacgimg.date) and append the .w1280.webp transcoded-variant suffix
+ * UNLESS already present. Returns a malloc'd string (caller frees), or NULL
+ * on alloc failure. Used by download_image() to retry via the mirror. */
+char *build_fallback_url(const char *url);
+
 /* Sanitise a title into a filesystem-safe string (in place-ish, returns
  * malloc'd copy). Replaces illegal chars with '_'. */
 char *filename_filter(const char *s);

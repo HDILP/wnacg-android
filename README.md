@@ -81,6 +81,13 @@ wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
 > 大陆网络会被 SNI 过滤/TLS 指纹拦截，或 IPv6 半可用（connect 通但数据不通 → BearSSL
 > `BR_ERR_IO 0x001f`）。二进制内置两招：https 握手失败自动降级 http:// 重试一次（主站
 > 仍强制 https）；TCP 连接 IPv4 优先 + 单地址 5s 超时。这是 2026-08-29 真机实测的修复。
+>
+> 图片图床是**回落**而非写死绕过：解析阶段保留站点声明的真实图床（`var fast_img_host`，
+> 如 `img5.wnimg.ru` / `img5.wnimg1.ru`）作为主下载地址；单张图下载失败（如 2.3 BearSSL
+> 指纹被掐）时，自动改走可通达镜像 `webp.wnacgimg.date` 并请求 `.w1280.webp` 转码变体重试一次
+> （`build_fallback_url` 在 `html.c`，由 `download_image` 调用）。镜像 host 默认 `webp.wnacgimg.date`，
+> 可在 App「设置」页经 `WNACG_IMG_HOST` 环境变量覆盖。封面（`t*.wnacgimg.date`）无替代线路，
+> 失败即失败，不影响整本下载。
 
 > 关于 `tag`：旧版路由 `/albums-index-page-N-tag-X.html` 在当前移动站已失效（返回 200 但无结果），现改为走搜索接口的 `f=tag` 端点，返回结构与 `search` 一致。限制：站点对 `f=tag` 只返回第 1 页（第 2 页起服务端返回空），所以 `tag` 模式实际只能看第一页结果——这是站点行为，非解析 bug。需要更多结果时可改用 `search`。
 

@@ -330,18 +330,48 @@ static char *rewrite_img_host(const char *url) {
     return out;
 }
 
-/* The site advertises its image host via `var fast_img_host='...';`, but the
- * default value (img5.wnimg1.ru) is unreachable from many networks / 2.3
- * BearSSL (Cloudflare blocks the non-browser TLS fingerprint). We ignore the
- * page-provided host and always use the runtime override g_img_host, which
- * defaults to webp.wnacgimg.date (serves the .w1280.webp variant, reachable)
- * or the user-configured WNACG_IMG_HOST. */
+/* Public fallback builder: rewrite host to g_img_host, then append the
+ * .w1280.webp variant suffix (unless already present). Used by download_image
+ * to retry a failed primary URL via the reachable mirror. */
+char *build_fallback_url(const char *url) {
+    char *ru = rewrite_img_host(url);
+    if (!ru) return NULL;
+    size_t ul = strlen(ru);
+    if (ul >= 13 && strcmp(ru + ul - 13, ".w1280.webp") == 0) {
+        return ru; /* already a variant URL */
+    }
+    char *vu = malloc(ul + 13); /* 12 chars + NUL */
+    if (!vu) { free(ru); return NULL; }
+    memcpy(vu, ru, ul);
+    memcpy(vu + ul, ".w1280.webp", 12);
+    vu[ul + 12] = '\0';
+    free(ru);
+    return vu;
+}
+
+/* Extract the page-declared image host: `var fast_img_host='...';`. This is the
+ * site's REAL image host (e.g. https://img5.wnimg.ru, or img5.wnimg1.ru in
+ * newer pages). It is used ONLY as the PRIMARY download target; when that host
+ * is unreachable (2.3 BearSSL / Cloudflare TLS fingerprint), download_image()
+ * falls back to g_img_host + .w1280.webp via build_fallback_url(). We must NOT
+ * substitute g_img_host here, or the "fallback" would become a hardcoded
+ * override. Defaults to https://img5.wnimg.ru when the page omits it. */
 static char *extract_fast_img_host(const char *html, size_t hlen) {
-    (void)html; (void)hlen;
-    size_t hl = strlen(g_img_host);
-    char *val = xstrdup(g_img_host);
-    (void)hl;
-    return val;
+    const char *k = find_from(html, hlen, 0, "fast_img_host");
+    if (k) {
+        const char *p = k + 13;
+        while (p < html + hlen && *p != '\'' && *p != '"') p++;
+        if (p < html + hlen) {
+            char q = *p;
+            p++;
+            const char *start = p;
+            while (p < html + hlen && *p != q) p++;
+            if (p < html + hlen) {
+                return xstrndup(start, (size_t)(p - start));
+            }
+        }
+    }
+    return xstrdup("https://img5.wnimg.ru");
 }
 
 int parse_imglist(const char *html, char ***out_urls, int *out_count) {
@@ -438,27 +468,10 @@ int parse_imglist(const char *html, char ***out_urls, int *out_count) {
                     cap *= 2;
                     urls = realloc(urls, cap * sizeof(char *));
                 }
-                /* Rewrite the host to g_img_host (unreachable img5.wnimg1.ru /
-                 * img5.wnimg.ru hardcoded in the gallery HTML gets normalised). */
-                char *ru = rewrite_img_host(url);
-                if (ru) { free(url); url = ru; }
-                /* Request the .w1280.webp variant: the reachable image host
-                 * (webp.wnacgimg.date) only serves the transcoded .w1280.webp
-                 * variant for BOTH .webp and .jpg originals (e.g.
-                 * 001.webp.w1280.webp and 001.jpg.w1280.webp are both valid;
-                 * the bare 001.jpg / 001.webp paths are NOT served there).
-                 * So unconditionally append .w1280.webp unless already present. */
-                size_t ul = strlen(url);
-                if (ul < 13 || strcmp(url + ul - 13, ".w1280.webp") != 0) {
-                    char *vu = malloc(ul + 13); /* 12 chars + NUL */
-                    if (vu) {
-                        memcpy(vu, url, ul);
-                        memcpy(vu + ul, ".w1280.webp", 12);
-                        vu[ul + 12] = '\0';
-                        free(url);
-                        url = vu;
-                    }
-                }
+                /* Keep the site's ORIGINAL image URL as the primary target.
+                 * The download path falls back to g_img_host + .w1280.webp
+                 * variant ONLY if this primary host is unreachable (see
+                 * build_fallback_url in wnacg.c's download_image). */
                 urls[count++] = url;
             } else {
                 free(url);

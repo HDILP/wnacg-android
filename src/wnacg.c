@@ -44,30 +44,55 @@ static void url_encode(const char *src, char *dst, size_t dstcap) {
     dst[j] = '\0';
 }
 
-/* Download a single image URL to the given path. Returns 0 on success. */
+/* Download a single image URL to the given path.
+ * Implements host fallback: if the primary URL fails (e.g. the site's default
+ * img5.wnimg1.ru is unreachable from 2.3 BearSSL / many networks), retry once
+ * via the reachable mirror g_img_host with the .w1280.webp variant. The
+ * fallback bytes always land at out_path (the Java side decodes by file magic,
+ * not extension). Returns 0 on success. */
 static int download_image(const char *url, const char *out_path) {
     char referer[128];
     snprintf(referer, sizeof(referer), "https://%s/", g_api_domain);
     http_response r;
-    if (http_get(url, referer, NULL, 5, &r) != 0) {
-        fprintf(stderr, "  [!] network error: %s\n", url);
-        return -1;
-    }
-    if (r.status != 200 || r.body_len == 0) {
-        fprintf(stderr, "  [!] HTTP %d empty: %s\n", r.status, url);
+    if (http_get(url, referer, NULL, 5, &r) == 0 &&
+        r.status == 200 && r.body_len > 0) {
+        FILE *f = fopen(out_path, "wb");
+        if (!f) {
+            fprintf(stderr, "  [!] cannot open %s\n", out_path);
+            free_http_response(&r);
+            return -1;
+        }
+        fwrite(r.body, 1, r.body_len, f);
+        fclose(f);
         free_http_response(&r);
-        return -1;
+        return 0;
     }
-    FILE *f = fopen(out_path, "wb");
-    if (!f) {
-        fprintf(stderr, "  [!] cannot open %s\n", out_path);
-        free_http_response(&r);
-        return -1;
-    }
-    fwrite(r.body, 1, r.body_len, f);
-    fclose(f);
     free_http_response(&r);
-    return 0;
+
+    /* primary failed -> try the mirror (.w1280.webp variant on g_img_host) */
+    char *fb = build_fallback_url(url);
+    if (fb && strcmp(fb, url) != 0) {
+        fprintf(stderr, "  [~] 主图床失败, 回落镜像: %s\n", fb);
+        http_response fr;
+        if (http_get(fb, referer, NULL, 5, &fr) == 0 &&
+            fr.status == 200 && fr.body_len > 0) {
+            FILE *f = fopen(out_path, "wb");
+            if (f) {
+                fwrite(fr.body, 1, fr.body_len, f);
+                fclose(f);
+                free_http_response(&fr);
+                free(fb);
+                return 0;
+            }
+        }
+        free_http_response(&fr);
+        fprintf(stderr, "  [!] network error (fallback): %s\n", fb);
+        free(fb);
+        return -1;
+    }
+    free(fb);
+    fprintf(stderr, "  [!] network error: %s\n", url);
+    return -1;
 }
 
 static int ensure_dir(const char *path) {
