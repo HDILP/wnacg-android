@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 # build.sh — local build + optional Android cross-compile.
-#
-# Stages:
-#   ./build.sh            Build the host binary ./wnacg with gcc and run parser tests.
-#   ./build.sh test       Build (if needed) and run the parser unit tests only.
-#   ./build.sh android    Cross-compile for Android (needs $ANDROID_NDK_HOME) and
-#                         package the APK into android/app/build/outputs/wnacg.apk
-#
-# The host build uses the SAME C sources and the SAME BearSSL tree as the Android
-# build, so "it works on my machine" means the same parsing/TLS logic that ships
-# on the phone. The only differences are the toolchain and the DEFAULT_API_DOMAIN
-# (identical) — there is no separate code path for Android.
+# See README for full documentation.
 set -euo pipefail
 
 cd "$(dirname "$0")"
@@ -20,7 +10,11 @@ MBEDTLS_INC="$MBEDTLS_DIR/include"
 MBEDTLS_LIBS="$MBEDTLS_DIR/build-host/library/libmbedtls.a $MBEDTLS_DIR/build-host/library/libmbedx509.a $MBEDTLS_DIR/build-host/library/libmbedcrypto.a"
 
 DOMAIN='www.wn09.shop'
-CFLAGS="-O2 -Wall -Wextra -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"$DOMAIN\" -DMBEDTLS_USER_CONFIG_FILE='<mbedtls/mbedtls_user_config.h>'"
+# The -DMBEDTLS_USER_CONFIG_FILE macro must expand to a quoted string that the
+# preprocessor can use as #include "mbedtls/mbedtls_user_config.h". In bash we
+# build it with an inner pair of double quotes.
+CFG_DEF="-DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\""
+CFLAGS="-O2 -Wall -Wextra -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"$DOMAIN\" $CFG_DEF"
 
 build_host() {
     bash build-mbedtls-host.sh

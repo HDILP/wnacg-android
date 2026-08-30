@@ -39,8 +39,11 @@ cp src/mbedtls_user_config.h "$MBEDTLS_DIR/include/mbedtls/mbedtls_user_config.h
 make -C "$MBEDTLS_DIR" clean >/dev/null 2>&1 || true
 
 # Build library only (no tests, no programs)
-CFLAGS="-O2 -Wall -Wextra -DMBEDTLS_USER_CONFIG_FILE='<mbedtls/mbedtls_user_config.h>'" \
-  make -C "$MBEDTLS_DIR/library" -j4 CC="${CC:-gcc}" AR="${AR:-ar}"
+# -DMBEDTLS_USER_CONFIG_FILE must expand to a quoted filename; the awkward
+# quoting builds: -DMBEDTLS_USER_CONFIG_FILE='"mbedtls/mbedtls_user_config.h"'
+CFG_DEF="-DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\""
+CFLAGS="-O2 -Wall -Wextra $CFG_DEF"
+make -C "$MBEDTLS_DIR/library" -j4 CC="${CC:-gcc}" AR="${AR:-ar}" CFLAGS="$CFLAGS"
 
 mkdir -p "$OUT/library"
 cp "$MBEDTLS_DIR/library/libmbedtls.a" "$OUT/library/"
