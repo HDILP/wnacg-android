@@ -239,6 +239,7 @@ public class MainActivity extends Activity {
         final TextView meta;
         final Button dlBtn;
         long id = -1;
+        String coverUrl = "";
 
         SearchCard() {
             float density = getResources().getDisplayMetrics().density;
@@ -249,6 +250,31 @@ public class MainActivity extends Activity {
             root.setGravity(android.view.Gravity.CENTER_VERTICAL);
             root.setPadding(dp(8), dp(6), dp(8), dp(6));
             root.setBackgroundDrawable(cardBg());
+            // Long-press the whole card to copy its full info (title + ID +
+            // download command + cover URL) to the clipboard — handy for pasting
+            // into a chat/issue when reporting a problem, since the title is
+            // ellipsized in the card and the cover URL isn't shown at all.
+            root.setOnLongClickListener(new android.view.View.OnLongClickListener() {
+                public boolean onLongClick(android.view.View v) {
+                    StringBuilder sb = new StringBuilder();
+                    if (title.getText().length() > 0) {
+                        sb.append(title.getText());
+                        if (id > 0) sb.append("  [ID ").append(id).append("]");
+                        sb.append('\n');
+                        sb.append("download ").append(id).append('\n');
+                    }
+                    if (meta.getText().length() > 0) sb.append(meta.getText()).append('\n');
+                    if (coverUrl.length() > 0) sb.append("封面: ").append(coverUrl).append('\n');
+                    String text = sb.toString().trim();
+                    if (text.length() == 0) return false;
+                    android.content.ClipboardManager cm =
+                        (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                    cm.setText(text);
+                    android.widget.Toast.makeText(MainActivity.this,
+                            "已复制卡片信息", android.widget.Toast.LENGTH_SHORT).show();
+                    return true;
+                }
+            });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.FILL_PARENT, cardH);
             lp.setMargins(0, 0, 0, dp(6));
@@ -278,6 +304,9 @@ public class MainActivity extends Activity {
             title.setTextColor(Color.parseColor("#303030"));
             title.setMaxLines(2);
             title.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            try {
+                title.setTextIsSelectable(true);
+            } catch (Throwable t) { /* API 11+ */ }
             textCol.addView(title);
 
             meta = new TextView(MainActivity.this);
@@ -286,6 +315,9 @@ public class MainActivity extends Activity {
             meta.setMaxLines(2);
             meta.setEllipsize(android.text.TextUtils.TruncateAt.END);
             meta.setPadding(0, dp(2), 0, 0);
+            try {
+                meta.setTextIsSelectable(true);
+            } catch (Throwable t) { /* API 11+ */ }
             textCol.addView(meta);
 
             dlBtn = new Button(MainActivity.this);
@@ -344,6 +376,9 @@ public class MainActivity extends Activity {
                 t.setTextSize(13);
                 t.setTypeface(android.graphics.Typeface.MONOSPACE);
                 t.setText(text);
+                try {
+                    t.setTextIsSelectable(true);
+                } catch (Throwable e) { /* API 11+ */ }
                 results.addView(t);
             }
         });
@@ -651,6 +686,7 @@ public class MainActivity extends Activity {
                 // BitmapFactory) can display them. No SDK_INT guard needed.
                 if (url.startsWith("http")) {
                     final SearchCard card = curCard;
+                    card.coverUrl = url;
                     coversExec.execute(new Runnable() {
                         public void run() { fetchCoverInto(card, url); }
                     });
