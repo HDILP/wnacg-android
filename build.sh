@@ -11,8 +11,10 @@ MBEDTLS_LIBS="$MBEDTLS_DIR/build-host/library/libmbedtls.a $MBEDTLS_DIR/build-ho
 
 DOMAIN='www.wn09.shop'
 # The -DMBEDTLS_USER_CONFIG_FILE macro must expand to a quoted string that the
-# preprocessor can use as #include "mbedtls/mbedtls_user_config.h". In bash we
-# build it with an inner pair of double quotes.
+# preprocessor can use as #include "mbedtls/mbedtls_user_config.h".
+# The shell strips one layer of quoting; gcc sees a macro whose value is
+# '"mbedtls/mbedtls_user_config.h"' (with the quotes) — exactly what
+# build_info.h needs for #include MBEDTLS_USER_CONFIG_FILE.
 CFG_DEF="-DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\""
 CFLAGS="-O2 -Wall -Wextra -std=c99 -D_GNU_SOURCE -DDEFAULT_API_DOMAIN=\"$DOMAIN\" $CFG_DEF"
 

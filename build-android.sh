@@ -85,7 +85,7 @@ echo "[android] compiling wnacg-legacy (ARMv5TE, non-PIE ET_EXEC) for API 9-15 .
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
-    -DMBEDTLS_USER_CONFIG_FILE="mbedtls/mbedtls_user_config.h" \
+    -DMBEDTLS_USER_CONFIG_FILE='\"mbedtls/mbedtls_user_config.h\"' \
     -I"$MBEDTLS_INC" -Isrc -I"$WEBP_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
     -o android/app/src/main/assets/wnacg-legacy \
@@ -97,7 +97,7 @@ echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
 "$TC-gcc" --sysroot="$SYSROOT" $SYSINC \
     -O2 -std=c99 -fPIE \
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
-    -DMBEDTLS_USER_CONFIG_FILE="mbedtls/mbedtls_user_config.h" \
+    -DMBEDTLS_USER_CONFIG_FILE='\"mbedtls/mbedtls_user_config.h\"' \
     -I"$MBEDTLS_INC" -Isrc -I"$WEBP_INC" \
     src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
     -o "$OUT_LIB" \
