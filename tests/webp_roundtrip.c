@@ -13,6 +13,7 @@
 #include "webp/encode.h"   /* WebPEncodeRGBA */
 #include "webp/decode.h"   /* WebPDecodeRGBA */
 #include "png_write.h"     /* png_write_rgb */
+#include <zlib.h>          /* uncompress (pixel check) */
 
 static int rd32be(const unsigned char *p) {
     return (p[0] << 24) | (p[1] << 16) | (p[2] << 8) | p[3];
@@ -126,7 +127,67 @@ int main(void) {
         if (crc_bad) return 1;
     }
 
-    printf("OK round-trip %dx%d -> WebP %zu bytes -> PNG %dx%d (8-bit RGBA, CRC verified)\n",
+    /* 6) PIXEL-LEVEL check: inflate the IDAT and compare every pixel against
+     *    the decoded RGBA. Header/CRC checks alone cannot catch a writer that
+     *    repeats the first pixel of each row (which renders as vertical color
+     *    stripes on device) — that bug shipped once, so verify content. */
+    {
+        /* locate IDAT */
+        FILE *g = fopen(png_path, "rb");
+        if (!g) { fprintf(stderr, "FAIL: cannot reopen PNG for pixel check\n"); return 1; }
+        fseek(g, 0, SEEK_END);
+        long fsz = ftell(g);
+        fseek(g, 0, SEEK_SET);
+        unsigned char *whole = (unsigned char *)malloc((size_t)fsz);
+        if (!whole || fread(whole, 1, (size_t)fsz, g) != (size_t)fsz) {
+            fprintf(stderr, "FAIL: cannot read whole PNG for pixel check\n"); return 1;
+        }
+        fclose(g);
+        long pos = 8;
+        unsigned char *idat = NULL; long idat_len = 0;
+        while (pos + 12 <= fsz) {
+            uint32_t ln = rd32be(whole + pos);
+            if (pos + 12 + (long)ln > fsz) break;
+            if (whole[pos+4]=='I' && whole[pos+5]=='D' && whole[pos+6]=='A' && whole[pos+7]=='T') {
+                idat = whole + pos + 8;
+                idat_len = (long)ln;
+                break;
+            }
+            pos += 12 + (long)ln;
+        }
+        if (!idat) { fprintf(stderr, "FAIL: no IDAT found\n"); free(whole); return 1; }
+
+        long raw = (long)w * 4 + 1;
+        unsigned char *scan = (unsigned char *)malloc((size_t)raw * h);
+        if (!scan) { free(whole); return 1; }
+        uLongf scan_len = (uLongf)(raw * h);
+        int zr = uncompress(scan, &scan_len, idat, (uLong)idat_len);
+        if (zr != Z_OK || (long)scan_len != raw * h) {
+            fprintf(stderr, "FAIL: IDAT inflate zr=%d len=%lu (want %ld)\n", zr, scan_len, raw * h);
+            free(scan); free(whole); return 1;
+        }
+        int bad = 0;
+        for (int y = 0; y < h && !bad; y++) {
+            const unsigned char *row = scan + (long)y * raw;
+            if (row[0] != 0) { fprintf(stderr, "FAIL: row %d filter=%d (want 0)\n", y, row[0]); bad = 1; break; }
+            for (int x = 0; x < w; x++) {
+                const unsigned char *want = out + ((long)y * w + x) * 4;
+                const unsigned char *got = row + 1 + (long)x * 4;
+                if (got[0] != want[0] || got[1] != want[1] ||
+                    got[2] != want[2] || got[3] != want[3]) {
+                    fprintf(stderr, "FAIL: pixel (%d,%d) got %02x%02x%02x%02x want %02x%02x%02x%02x\n",
+                            x, y, got[0], got[1], got[2], got[3],
+                            want[0], want[1], want[2], want[3]);
+                    bad = 1; break;
+                }
+            }
+        }
+        free(scan);
+        free(whole);
+        if (bad) return 1;
+    }
+
+    printf("OK round-trip %dx%d -> WebP %zu bytes -> PNG %dx%d (8-bit RGBA, CRC + pixels verified)\n",
            w, h, wsize, pw, ph);
     return 0;
 }

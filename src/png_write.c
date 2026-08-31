@@ -66,10 +66,10 @@ int png_write_rgb(const char *path, const unsigned char *rgba, int w, int h) {
         unsigned char *dst = buf + (long)y * raw;
         *dst++ = 0;                       /* filter type 0 (none) */
         for (int x = 0; x < w; x++) {
-            *dst++ = src[0];             /* R */
-            *dst++ = src[1];             /* G */
-            *dst++ = src[2];             /* B */
-            *dst++ = src[3];             /* A */
+            *dst++ = src[x * 4 + 0];      /* R */
+            *dst++ = src[x * 4 + 1];      /* G */
+            *dst++ = src[x * 4 + 2];      /* B */
+            *dst++ = src[x * 4 + 3];      /* A */
         }
     }
 
