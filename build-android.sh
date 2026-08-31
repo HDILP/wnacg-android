@@ -25,7 +25,7 @@
 # NOTE: Android bionic has no static libc (libc is shared and present on every
 # device), so the binary is dynamically linked against bionic — still a single
 # self-contained file. We pass --start-group so the linker can resolve symbols
-# that BearSSL references but our app objects don't.
+# that mbedTLS references but our app objects don't.
 set -euo pipefail
 
 cd "$(dirname "$0")"

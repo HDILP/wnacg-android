@@ -367,7 +367,7 @@ char *build_fallback_url(const char *url) {
  * escaped as \". The gallery URLs are then `fast_img_host+\"//img5.wnimg1.ru/
  * data/.../NNN.webp\"`, i.e. they carry their own full host, so an empty
  * fast_img_host is correct and expected. This is used ONLY as the PRIMARY
- * download target; when that host is unreachable (2.3 BearSSL / Cloudflare TLS
+ * download target; when that host is unreachable (2.3 mbedTLS / Cloudflare TLS
  * fingerprint), download_image() falls back to g_img_host + .w1280.webp via
  * build_fallback_url(). We must NOT substitute g_img_host here, or the
  * "fallback" would become a hardcoded override. Defaults to "" when the page

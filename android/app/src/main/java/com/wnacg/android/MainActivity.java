@@ -52,8 +52,8 @@ import android.provider.Settings;
  * and from assets). On API 9 the same path works fine. So a single layout covers
  * 2.3 through 16.
  *
- * The binary links BearSSL statically and does its own TLS, so it works on
- * Android 2.3 (API 9) where the system SSL is hopelessly dated.
+ * The binary links mbedTLS 3.6.2 statically and does its own TLS (1.2 + 1.3),
+ * so it works on Android 2.3 (API 9) where the system SSL is hopelessly dated.
  *
  * Two render modes:
  *  - SEARCH / DOWNLOAD commands stream into a structured view:
@@ -97,7 +97,7 @@ public class MainActivity extends Activity {
     private static final String PREFS_NAME = "wnacg_prefs";
     private static final String KEY_DOMAIN = "domain";
     /* Image CDN host (downloads + covers). The site's default fast_img_host
-     * (img5.wnimg1.ru) is unreachable from many networks / 2.3 BearSSL (Cloudflare
+     * (img5.wnimg1.ru) is unreachable from many networks / 2.3 mbedTLS (Cloudflare
      * blocks the non-browser TLS fingerprint), so we fall back to webp.wnacgimg.date
      * which serves the .w1280.webp variant and is reachable. Overridable per-settings. */
     private static final String DEFAULT_IMG_HOST = "webp.wnacgimg.date";
@@ -445,7 +445,7 @@ public class MainActivity extends Activity {
     }
 
     /** Settings dialog: change the image CDN host (the default fast_img_host
-     *  img5.wnimg1.ru is unreachable from many networks / 2.3 BearSSL; we fall
+     *  img5.wnimg1.ru is unreachable from many networks / 2.3 mbedTLS; we fall
      *  back to webp.wnacgimg.date which serves the .w1280.webp variant). */
     private void showImgHostDialog() {
         final android.widget.EditText input = new android.widget.EditText(this);
@@ -695,7 +695,7 @@ public class MainActivity extends Activity {
             Matcher cm = COVER_LINE.matcher(line.trim());
             if (cm.matches()) {
                 final String url = cm.group(1);
-                // Covers are now re-encoded to BMP by the native binary (WebP
+                // Covers are now re-encoded to PNG by the native binary (WebP
                 // decoded server-side), so even API 9 (no WebP decoder in
                 // BitmapFactory) can display them. No SDK_INT guard needed.
                 if (url.startsWith("http")) {

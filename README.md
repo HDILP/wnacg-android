@@ -3,8 +3,8 @@
 在 **真·Android 2.3（API 9 / Gingerbread，2010 年设备）** 上搜索并下载 wnacg 漫画，并兼容到 **Android 14/15/16（API 34–36）**。
 
 移植自开源项目 `lanyeeee/wnacg-downloader`（Rust 后端 + Vue 前端）。原版在 Android 2.3 上
-根本跑不起来（没有现代 TLS、没有能用的 webview）。本仓库用 **纯 C + BearSSL 0.6**
-重写了搜索和单线程下载，编译成一个 **单文件静态原生二进制**，再用一个极薄的 Java 壳
+根本跑不起来（没有现代 TLS、没有能用的 webview）。本仓库用 **纯 C + mbedTLS 3.6.2**
+重写了搜索和单线程下载，编译成一个 **单文件原生二进制**，再用一个极薄的 Java 壳
 （`minSdk=9`）通过 `Runtime.exec` 调用它——**完全绕开 2.3 的系统 TLS 和 JNI**。
 
 > 功能范围：搜索、按标签搜索、下载整本。单线程、纯命令行逻辑，但 Java 壳已做成真 GUI：
@@ -17,8 +17,10 @@
 
 ## 为什么这样设计
 
-- **BearSSL 静态链接**：自带的 TLS 栈在 API 9 上早就过期，且 2.3 的 `HttpsURLConnection`
-  不支持现代 cipher，握手必失败。BearSSL 体积小数百 KB、可静态链接，自己搞定握手。
+- **mbedTLS 3.6.2 静态链接**：自带的 TLS 栈在 API 9 上早就过期，且 2.3 的 `HttpsURLConnection`
+  不支持现代 cipher，握手必失败。mbedTLS 可静态链接、支持 TLS 1.2 + 1.3，自己搞定握手
+  （2026-08-30 从 BearSSL 0.6 迁移：原版只支持到 TLS 1.2，被部分镜像站握手拒绝）。
+  配置裁剪见 `src/mbedtls_user_config.h`（只开 ECDHE、AES-GCM/CCM、SHA-2 等最小子集）。
 - **不碰 JNI**：原生逻辑全在 C 里，Java 只负责「按系统版本挑二进制（API 16+ 用
   `nativeLibraryDir` 里的 `libwnacg.so`，一个 PIE 可执行文件伪装成 .so；API 9–15 用
   assets 里解压出来的非 PIE `wnacg-legacy`）→ Runtime.exec 接收参数 → 把 stdout/stderr
@@ -70,20 +72,21 @@ wnacg search 百合 汉化          # 多关键词：空格分隔，全部并入
 wnacg search 百合 汉化 2        # 最后一个纯数字参数视为页码
 wnacg download 257351          # 自动存到 /sdcard/downloads/257351（已授权时）
 wnacg download 257351 /sdcard/downloads   # 等价写法
-wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
+wnacg cover 257351 https://t4.wnacgimg.date/data/... /sdcard/c.jpg
 ```
 
 > 默认域名：`www.wn09.shop`。编译期只是兜底（`src/wnacg.c` 的 `DEFAULT_API_DOMAIN` 宏，
-> 由 `Makefile`/`build.sh`/`build-android.sh` 传入）；运行期由 Java 壳通过 `WNACG_DOMAIN`
+> 由 `build.sh`/`build-android.sh` 传入）；运行期由 Java 壳通过 `WNACG_DOMAIN`
 > 环境变量注入到原生二进制，用户在 App「设置」页可随时改成其他镜像，无需重编译。
 
 > 网络健壮性：图片/封面 CDN（`img*.wnimg1.ru`、`t*.wnacgimg.date`，多为 Cloudflare）在部分
-> 大陆网络会被 SNI 过滤/TLS 指纹拦截，或 IPv6 半可用（connect 通但数据不通 → BearSSL
-> `BR_ERR_IO 0x001f`）。二进制内置两招：https 握手失败自动降级 http:// 重试一次（主站
-> 仍强制 https）；TCP 连接 IPv4 优先 + 单地址 5s 超时。这是 2026-08-29 真机实测的修复。
+> 大陆网络会被 SNI 过滤/TLS 指纹拦截，或 IPv6 半可用（connect 通但数据不通 → TLS 握手
+> 超时）。二进制内置两招：TCP 连接**只用 IPv4**（半可用 IPv6 只会把快速失败拖成 60s 超时，
+> 2026-08-31 实测后彻底放弃 v6）+ 单地址 5s 超时；主站仍强制 https。
+> 这是 2026-08-29 真机实测的修复。
 >
 > 图片图床是**回落**而非写死绕过：解析阶段保留站点声明的真实图床（`var fast_img_host`，
-> 即原图主图床 `img5.wnimg1.ru`）作为主下载地址；单张图下载失败（如 2.3 BearSSL
+> 即原图主图床 `img5.wnimg1.ru`）作为主下载地址；单张图下载失败（如 2.3 mbedTLS
 > 指纹被掐）时，自动改走可通达镜像 `webp.wnacgimg.date` 并请求 `.w1280.webp` 转码变体重试一次
 > （`build_fallback_url` 在 `html.c`，由 `download_image` 调用）。镜像 host 默认 `webp.wnacgimg.date`，
 > 可在 App「设置」页经 `WNACG_IMG_HOST` 环境变量覆盖。封面（`t*.wnacgimg.date`）无替代线路，
@@ -95,13 +98,14 @@ wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
 
 ## 本地开发 / 验证（桌面 gcc）
 
-桌面用 **同一份 C 源码 + 同一棵 BearSSL 树** 编译，保证「本机测的逻辑和安卓完全一致」——
+桌面用 **同一份 C 源码 + 同一棵 mbedTLS 树** 编译，保证「本机测的逻辑和安卓完全一致」——
 安卓版只是换了工具链（`arm-linux-androideabi-gcc`）并加 `-pie`（另出一个非 PIE 变体给
 2.3），没有第二条代码路径。注意 bionic 没有静态 libc，安卓版是动态链接 libc.so 的
 （老设备上也必有 /system/lib/libc.so），不是 `-static`。
 
 ```bash
 # 1) 编译主机二进制 + 跑解析单测
+#    (第一次会自动下载并编译 mbedTLS 3.6.2 — build-mbedtls-host.sh)
 ./build.sh test            # 顺便跑 tests/ 里的样例 HTML 解析测试
 
 # 2) 手动跑真实链路（需要网络可达 wn09.shop）
@@ -118,6 +122,8 @@ wnacg cover 257351 https://t4.wnacgimg.date/data/... .webp /sdcard/c.jpg
 和 **Android SDK**（build-tools 29.0.3 + `platforms;android-9` + `platforms;android-34`）。
 注意 r16b 没有 `platforms/android-9` 目录（最低 android-16），链接时用 android-16 的
 sysroot——PIE 正是 4.1 的门槛，非 PIE 的 2.3 变体不需要新版 sysroot 符号。
+mbedTLS 3.6.2 源码由 `build-mbedtls.sh`（ARM 交叉）自动下载编译；libwebp 1.3.2 由
+`build-webp.sh`（ndk-build 出 armeabi 解码器）自动下载编译。
 
 ```bash
 export ANDROID_NDK_HOME=/path/to/android-ndk-r16b
@@ -150,7 +156,7 @@ build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 ke
    「下载」按钮（点了直接对该 ID 发起 `download`）。封面 WebP 由原生二进制在服务端下载后
    解码并转存为 PNG，因此即便 2.3 的 BitmapFactory 无 WebP 解码器也能显示（BMP 在 2.3 同样解不出，
    故用 PNG）。封面经原生二进制的
-   `cover <id> <url> <path>` 子命令下载（享受 TLS 降级 + IPv4 优先修复），缓存在
+   `cover <id> <url> <path>` 子命令下载（享受 IPv4-only + 5s 超时修复），缓存在
    `cacheDir/covers/`。
 6. `adb shell` 也可直接跑二进制：API 16+ 在 `nativeLibraryDir` 跑 `./libwnacg.so`；
    API 9–15 用 filesDir 里的 `wnacg-legacy`。
@@ -167,34 +173,38 @@ build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 ke
 ```
 src/
   wnacg.c      命令行主程序：search/tag/detail/download/cover + URL 编码
-  html.c       HTML 解析：搜索结果列表 + imglist（含 fast_img_host 变量替换）
-  net.c        HTTP GET、TLS降级/重定向、IPv4优先+5s超时连接、流式读取
-  tls.c        BearSSL 客户端封装（手动驱动引擎，关闭证书校验）
+  html.c       HTML 解析：搜索结果列表 + imglist（fast_img_host 变量处理）
+  net.c        HTTP GET、重定向、IPv4-only+5s超时连接、流式读取
+  tls.c        mbedTLS 客户端封装（手动驱动引擎，关闭证书校验）
+  img_host.c   图床 host 运行期覆盖（g_img_host / WNACG_IMG_HOST）
   webp_bmp.c   cover 命令：WebP→RGBA（libwebp）后转 PNG（见下）；非 WebP 原样落盘
   png_write.c  RGBA→PNG writer（zlib deflate + 自写 CRC32，不依赖 libpng）
-thirdparty/bearssl-0.6/    BearSSL 0.6（静态库，主机+安卓各编一份）
-thirdparty/libwebp/        libwebp 1.3.2（仅 Android 编译期从 tarball 拉取，CI 产物
+thirdparty/mbedtls/          mbedTLS 3.6.2（源码由 build-mbedtls*.sh 拉取；
+                            build-host/ 与 build-android/ 各编一份静态库）
+thirdparty/libwebp/          libwebp 1.3.2（仅 Android 编译期从 tarball 拉取，CI 产物
                             build-android/libwebp.a 供 armeabi 链接；build-host/ 供单测）
 tests/                   样例 HTML 解析单测（parse_test.c）+ WebP→PNG round-trip
                            （webp_roundtrip.c）
 android/app/src/main/   Java 壳（minSdk=9）+ manifest + resources
                         + jniLibs/armeabi/libwnacg.so（PIE，API 16+）
                         + assets/wnacg-legacy（非 PIE，API 9–15）
-build.sh / build-android.sh / packapk.sh / build-webp.sh / build-webp-host.sh
-                        编译与打包脚本（build-webp*.sh 拉 libwebp 源码并编解码器）
+build.sh / build-android.sh / packapk.sh / build-mbedtls.sh / build-mbedtls-host.sh
+  / build-webp.sh / build-webp-host.sh
+                        编译与打包脚本（mbedtls/webp 编译脚本负责拉源码）
 .github/workflows/      CI：ubuntu 上编 NDK/SDK、缓存 keystore、出 apk artifact
 ```
 
 > 封面 WebP 解码走 libwebp（ndk-build 编 armeabi 解码器，非 autotools），解码出的 RGBA
 > 由 `png_write.c` 写成 PNG（zlib 走 NDK 自带 libz，链接 `-lz`）。2.3 的 BitmapFactory 既
 > 无 WebP 解码器也无 BMP 解码器，故最终用 PNG——这是 2026-08-29 真机反馈后从 BMP 改为 PNG。
-
 ---
 
 ## 已知限制
 
 - 单线程下载，大本较慢（2.3 设备本来也不适合并发）。
-- 证书不校验（见上）。如要开启，改 `src/tls.c` 的 x509 校验回调。
+- 证书不校验（见上）。如要开启，改 `src/tls.c` 的 x509 校验回调（当前 `MBEDTLS_SSL_VERIFY_NONE`）。
+- TLS 栈是 mbedTLS 3.6.2（TLS 1.2 + 1.3）。BearSSL 0.6 已彻底弃用（2026-08-30 迁移），
+  源码快照已从 git 移除，不再编译。
 - 仅验证过 `www.wn09.shop`；换镜像站在 App 内「设置」页改即可（运行期经 `WNACG_DOMAIN` 环境变量注入原生二进制，无需重编译；编译期 `DEFAULT_API_DOMAIN` 宏仅作兜底）。
 - NDK r16b 是硬依赖；更老的 NDK 缺 armeabi，更新的 NDK 抬高了最低 API。
 - 封面缩略图所有 API 均可显示：原生二进制把 WebP 封面解码后转存为 PNG，2.3/3.x 的 BitmapFactory 无 WebP 解码器也能显示（BMP 在 2.3 同样解不出，故用 PNG）。转码链路由 CI 的 `webp_roundtrip` 单测验证（WebP→RGBA→PNG 真数据 round-trip）；2.3 真机封面显示待装包确认。

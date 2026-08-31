@@ -47,7 +47,7 @@ static void url_encode(const char *src, char *dst, size_t dstcap) {
 /* Download a single image URL to the given path (raw bytes, no transcode —
  * covers are transcoded separately by cmd_cover's save_image_auto). Implements
  * host fallback: if the primary URL fails (e.g. site default img5.wnimg1.ru
- * unreachable from 2.3 BearSSL / many networks), retry once via the reachable
+ * unreachable from 2.3 mbedTLS / many networks), retry once via the reachable
  * mirror g_img_host with the .w1280.webp variant. */
 static int download_image(const char *url, const char *out_path) {
     char referer[128];

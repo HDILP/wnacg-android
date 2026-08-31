@@ -86,43 +86,39 @@ static int tcp_connect(const char *host, int port) {
     snprintf(portstr, sizeof(portstr), "%d", port);
     if (getaddrinfo(host, portstr, &hints, &res) != 0) return -1;
     int fd = -1;
-    /* IPv4 first, then IPv6.  Many mobile networks have IPv6 that "connects"
-     * but cannot actually carry traffic (semi-tunneled/broken v6), which makes
-     * the TLS handshake hang until the 60s recv timeout -> BR_ERR_IO (0x001f).
-     * The main site resolves to A-only so it works; the Cloudflare image CDN
-     * advertises AAAA too and gets stuck on v6. Also bound each connect() with
-     * a 5s poll so one dead address can't stall the whole download. */
-    for (int pass = 0; pass < 2; pass++) {
-        for (ai = res; ai; ai = ai->ai_next) {
-            int fam = ai->ai_family;
-            if ((pass == 0 && fam != AF_INET) || (pass == 1 && fam != AF_INET6))
-                continue;
-            int s = socket(fam, ai->ai_socktype, ai->ai_protocol);
-            if (s < 0) continue;
-            /* non-blocking connect + 5s timeout */
-            int fl = fcntl(s, F_GETFL, 0);
-            fcntl(s, F_SETFL, fl | O_NONBLOCK);
-            int rc = connect(s, ai->ai_addr, ai->ai_addrlen);
-            if (rc != 0 && errno == EINPROGRESS) {
-                fd_set wf; FD_ZERO(&wf); FD_SET(s, &wf);
-                struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
-                rc = select(s + 1, NULL, &wf, NULL, &tv);
-                if (rc > 0) {
-                    int soerr = 0; socklen_t slen = sizeof(soerr);
-                    getsockopt(s, SOL_SOCKET, SO_ERROR, &soerr, &slen);
-                    rc = soerr ? -1 : 0;
-                } else {
-                    rc = -1; /* timeout */
-                }
+    /* IPv4 ONLY. Many mobile networks have IPv6 that "connects" but cannot
+     * actually carry traffic (semi-tunneled/broken v6), which makes the TLS
+     * handshake hang until the 60s recv timeout. The main site resolves to
+     * A-only so it works; the Cloudflare image CDN advertises AAAA too and
+     * gets stuck on v6. Falling back to v6 after v4 fails just trades a fast
+     * failure for a 60s hang, so we never try v6. Each connect() is bound
+     * with a 5s poll so one dead address can't stall the whole download. */
+    for (ai = res; ai; ai = ai->ai_next) {
+        if (ai->ai_family != AF_INET) continue;
+        int s = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+        if (s < 0) continue;
+        /* non-blocking connect + 5s timeout */
+        int fl = fcntl(s, F_GETFL, 0);
+        fcntl(s, F_SETFL, fl | O_NONBLOCK);
+        int rc = connect(s, ai->ai_addr, ai->ai_addrlen);
+        if (rc != 0 && errno == EINPROGRESS) {
+            fd_set wf; FD_ZERO(&wf); FD_SET(s, &wf);
+            struct timeval tv = { .tv_sec = 5, .tv_usec = 0 };
+            rc = select(s + 1, NULL, &wf, NULL, &tv);
+            if (rc > 0) {
+                int soerr = 0; socklen_t slen = sizeof(soerr);
+                getsockopt(s, SOL_SOCKET, SO_ERROR, &soerr, &slen);
+                rc = soerr ? -1 : 0;
+            } else {
+                rc = -1; /* timeout */
             }
-            if (rc == 0) {
-                fcntl(s, F_SETFL, fl); /* restore blocking */
-                fd = s;
-                break;
-            }
-            close(s);
         }
-        if (fd >= 0) break;
+        if (rc == 0) {
+            fcntl(s, F_SETFL, fl); /* restore blocking */
+            fd = s;
+            break;
+        }
+        close(s);
     }
     if (res) freeaddrinfo(res);
     return fd;
