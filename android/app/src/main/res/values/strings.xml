@@ -5,16 +5,20 @@
     <string name="run">运行</string>
     <string name="settings">设置</string>
     <string name="dialog_title_domain">镜像域名</string>
-    <string name="dialog_hint_domain">例如 www.wn09.shop（不要带 http://）</string>
+    <string name="dialog_hint_domain">例如 www.wn10.shop（不要带 http://）</string>
     <string name="dialog_ok">保存</string>
     <string name="dialog_cancel">取消</string>
     <string name="toast_domain_saved">已保存镜像域名: %s</string>
-    <string name="toast_domain_empty">域名不能为空（恢复默认 www.wn09.shop）</string>
+    <string name="toast_domain_empty">域名不能为空（恢复默认 www.wn10.shop）</string>
     <string name="img_host">图床</string>
     <string name="dialog_title_img_host">图床域名</string>
     <string name="dialog_hint_img_host">例如 webp.wnacgimg.date（不要带 http://）</string>
     <string name="toast_img_host_saved">已保存图床: %s</string>
     <string name="toast_img_host_empty">域名不能为空（恢复默认 webp.wnacgimg.date）</string>
+    <string name="zip_btn">下载ZIP</string>
+    <string name="zip_btn2">下载ZIP2</string>
+    <string name="zip_longpress">长按复制下载链接</string>
+    <string name="copied_zip_link">已复制ZIP下载链接，可粘贴到浏览器下载</string>
     <string name="output">输出</string>
 
     <!-- dropdown verbs: label shown in the spinner, and the command token it emits -->

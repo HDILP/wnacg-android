@@ -328,8 +328,11 @@ static int read_fixed_body(conn_reader *cr, http_response *r, long len) {
 
 /* ---------- main GET ---------- */
 
-int http_get(const char *url, const char *referer, const char *cookie,
-             int max_redirects, http_response *out) {
+/* Core request/response loop shared by http_get and http_post_json.
+ * A non-NULL body implies POST (JSON); NULL means GET. */
+static int http_req(const char *url, const char *referer, const char *cookie,
+                    const char *body,
+                    int max_redirects, http_response *out) {
     memset(out, 0, sizeof(*out));
     parsed_url pu;
     if (parse_url(url, &pu) != 0) return -1;
@@ -383,14 +386,30 @@ int http_get(const char *url, const char *referer, const char *cookie,
             int _n = (int)strlen(extra);
             snprintf(extra + _n, sizeof(extra) - _n, "Cookie: %s\r\n", cookie);
         }
-        int rl = snprintf(req, sizeof(req),
-            "GET %s HTTP/1.1\r\n"
-            "Host: %s\r\n"
-            "User-Agent: Mozilla/5.0 (wnacg-android)\r\n"
-            "Accept: */*\r\n"
-            "%s"
-            "Connection: close\r\n\r\n",
-            cur.path, cur.host, extra);
+        int body_len = body ? (int)strlen(body) : 0;
+        int rl;
+        if (body_len > 0) {
+            rl = snprintf(req, sizeof(req),
+                "POST %s HTTP/1.1\r\n"
+                "Host: %s\r\n"
+                "User-Agent: Mozilla/5.0 (wnacg-android)\r\n"
+                "Accept: */*\r\n"
+                "Content-Type: application/json\r\n"
+                "Content-Length: %d\r\n"
+                "%s"
+                "Connection: close\r\n\r\n"
+                "%s",
+                cur.path, cur.host, body_len, extra, body);
+        } else {
+            rl = snprintf(req, sizeof(req),
+                "GET %s HTTP/1.1\r\n"
+                "Host: %s\r\n"
+                "User-Agent: Mozilla/5.0 (wnacg-android)\r\n"
+                "Accept: */*\r\n"
+                "%s"
+                "Connection: close\r\n\r\n",
+                cur.path, cur.host, extra);
+        }
 
         int send_ok;
         if (tls_ok) {
@@ -415,10 +434,6 @@ int http_get(const char *url, const char *referer, const char *cookie,
         cr.tls_ctx = tls_ok ? tls_ctx : NULL;
         cr.buf = malloc(65536);
         cr.len = cr.pos = 0;
-
-        /* Stream the TLS/raw response through the reader; parse_headers and
-         * body readers stop at the correct length boundary, so we do NOT need
-         * the server to close the connection (keep-alive safe). */
 
         int status = 0;
         long cl = -1;
@@ -492,6 +507,16 @@ int http_get(const char *url, const char *referer, const char *cookie,
     free(working_url);
     free_parsed_url(&pu);
     return 0;
+}
+
+int http_get(const char *url, const char *referer, const char *cookie,
+             int max_redirects, http_response *out) {
+    return http_req(url, referer, cookie, NULL, max_redirects, out);
+}
+
+int http_post_json(const char *url, const char *referer, const char *json,
+                   int max_redirects, http_response *out) {
+    return http_req(url, referer, NULL, json, max_redirects, out);
 }
 
 void free_http_response(http_response *r) {

@@ -20,16 +20,24 @@ MBEDTLS_X509 := $(MBEDTLS_DIR)/build-host/library/libmbedx509.a
 MBEDTLS_CRYPTO := $(MBEDTLS_DIR)/build-host/library/libmbedcrypto.a
 MBEDTLS_INC := $(MBEDTLS_DIR)/include
 
+# Written for Android 2.3 (API 9) / Gingerbread era devices and newer.
+#
+# This app hits the wnacg mirror site. The DEFAULT_API_DOMAIN below is the
+# compile-time fallback; at runtime the Java shell injects WNACG_DOMAIN (user
+# can change the mirror in the in-app settings page). The default tracks the
+# currently-live mirror: www.wn09.shop went offline 2026-09-06, www.wn10.shop
+# is the current one. Keep this in sync with build.sh/build-android.sh and the
+# Java DEFAULT_DOMAIN constant.
 CC ?= gcc
 # Quote escaping must mirror build.sh: gcc must receive -D...="..." (the shell
 # strips one layer), so the macro expands to a C string literal.
 CFLAGS ?= -O2 -Wall -Wextra -std=c99 -D_GNU_SOURCE \
-	-DDEFAULT_API_DOMAIN=\"www.wn09.shop\" \
+	-DDEFAULT_API_DOMAIN=\"www.wn10.shop\" \
 	-DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\"
 LDFLAGS := $(MBEDTLS_LIB) $(MBEDTLS_X509) $(MBEDTLS_CRYPTO)
 
-SRC := src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/img_host.c
-HDR := src/net.h src/tls.h src/html.h src/webp_bmp.h
+SRC := src/net.c src/tls.c src/html.c src/zip.c src/wnacg.c src/webp_bmp.c src/img_host.c
+HDR := src/net.h src/tls.h src/html.h src/zip.h src/webp_bmp.h
 
 .PHONY: all test clean
 

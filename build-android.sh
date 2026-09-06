@@ -35,7 +35,7 @@ export ANDROID_NDK_ROOT="$NDK"
 # r16b only ships platforms/android-{16,18,22}; link against the lowest.
 LINK_API=16
 MANIFEST_MIN_SDK=9
-DOMAIN='www.wn09.shop'
+DOMAIN='www.wn10.shop'
 
 SYSROOT="$NDK/platforms/android-$LINK_API/arch-arm"
 UNIFIED_INC="$NDK/sysroot/usr/include"
@@ -87,7 +87,7 @@ echo "[android] compiling wnacg-legacy (ARMv5TE, non-PIE ET_EXEC) for API 9-15 .
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\" \
     -I"$MBEDTLS_INC" -Isrc -I"$WEBP_INC" \
-    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
+    src/net.c src/tls.c src/html.c src/zip.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
     -o android/app/src/main/assets/wnacg-legacy \
     -Wl,--start-group $MBEDTLS_LIBS_ANDROID "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group
 "$TC-strip" android/app/src/main/assets/wnacg-legacy 2>/dev/null || true
@@ -99,7 +99,7 @@ echo "[android] compiling wnacg (arm, armv5te, PIE exe named .so) ..."
     -DDEFAULT_API_DOMAIN="\"$DOMAIN\"" \
     -DMBEDTLS_USER_CONFIG_FILE=\"mbedtls/mbedtls_user_config.h\" \
     -I"$MBEDTLS_INC" -Isrc -I"$WEBP_INC" \
-    src/net.c src/tls.c src/html.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
+    src/net.c src/tls.c src/html.c src/zip.c src/wnacg.c src/webp_bmp.c src/png_write.c src/img_host.c \
     -o "$OUT_LIB" \
     -pie -fPIE \
     -Wl,--start-group $MBEDTLS_LIBS_ANDROID "$WEBP_A" -lc -lm -ldl -lz -Wl,--end-group

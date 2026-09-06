@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <title>[曼波～曼波～] 穹爆炒流萤&nbsp;&nbsp;[AI Generated].zip 下載 - 紳士漫畫</title>
+    <script src="https://cdn.tailwindcss.com/3.4.16"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+</head>
+<body>
+    <div id="download-area">
+        <button onclick="directDownload()" class="btn-glass">點擊下載 (Server 1)</button>
+        <button class="btn-glass">
+            <a class="ads" href="//dl1.wn01.download/down/3827/dffac3721000076ddf9df13b676ad6f0.zip?n=[曼波～曼波～] 穹爆炒流萤&nbsp;&nbsp;[AI Generated]"><span>備用線路 (Server 2)</span></a>
+        </button>
+    </div>
+    <script>
+        const CONFIG = {
+            WORKER_API: "https://d1.wcdn.date/api/generate-link",
+            FILE_KEY: "down/3827/dffac3721000076ddf9df13b676ad6f0.zip",
+            FILE_NAME: "[曼波～曼波～] 穹爆炒流萤&nbsp;&nbsp;[AI Generated].zip"
+        };
+        function directDownload() {
+            $.ajax({
+                url: CONFIG.WORKER_API,
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({file_key: CONFIG.FILE_KEY, file_name: CONFIG.FILE_NAME}),
+                success: function(data) {
+                    if (data.success) window.location.href = data.url;
+                }
+            });
+        }
+    </script>
+</body>
+</html>

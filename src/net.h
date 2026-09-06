@@ -34,7 +34,7 @@ static int wn_err(const char *fmt, ...) { va_list ap; va_start(ap, fmt); int r =
  * the caller; we keep a copy here for clarity. */
 typedef struct {
     int https;
-    char *host;     /* e.g. www.wn09.shop */
+    char *host;     /* e.g. www.wn10.shop */
     int port;       /* default 80 or 443 */
     char *path;     /* includes query, e.g. /search/index.php?q=x */
 } parsed_url;
@@ -63,6 +63,12 @@ void free_parsed_url(parsed_url *p);
  * -1 on transport/TLS failure. */
 int http_get(const char *url, const char *referer, const char *cookie,
              int max_redirects, http_response *out);
+
+/* Like http_get but POSTs a JSON body (Content-Type: application/json).
+ * Used by the site's /api/generate-link endpoint for whole-archive (zip)
+ * download links. Returns 0 on success, -1 on transport/TLS failure. */
+int http_post_json(const char *url, const char *referer, const char *json,
+                   int max_redirects, http_response *out);
 
 void free_http_response(http_response *r);
 

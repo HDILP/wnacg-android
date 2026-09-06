@@ -60,6 +60,8 @@
 wnacg search   <关键词...> [页码]         搜索漫画（全字段模糊，f=_all；多词用空格分隔）
 wnacg tag      <标签...>   [页码]         按标签搜索（f=tag；同样支持多词）
 wnacg download <漫画ID> [保存目录]      下载整本到目录（单线程）
+wnacg zip      <漫画ID> [1|2] [保存目录]  下载站方整包 zip（1=签名链 2=直链，见下）
+wnacg ziplink  <漫画ID>                 打印 zip 下载链接（ZIP1/ZIP2 行，供复制到浏览器）
 wnacg detail   <漫画ID>                 打印漫画详情（图数/标签）
 wnacg cover    <漫画ID> <URL> <输出文件>  下载单张图（壳内部用它拉封面缩略图）
 ```
@@ -72,10 +74,22 @@ wnacg search 百合 汉化          # 多关键词：空格分隔，全部并入
 wnacg search 百合 汉化 2        # 最后一个纯数字参数视为页码
 wnacg download 257351          # 自动存到 /sdcard/downloads/257351（已授权时）
 wnacg download 257351 /sdcard/downloads   # 等价写法
+wnacg zip 257351 2 /sdcard/downloads      # 整包 zip 用备用直链（HTTP/1.1 稳）
+wnacg ziplink 257351           # 打印两条链接，长按复制到浏览器下载
 wnacg cover 257351 https://t4.wnacgimg.date/data/... /sdcard/c.jpg
 ```
 
-> 默认域名：`www.wn09.shop`。编译期只是兜底（`src/wnacg.c` 的 `DEFAULT_API_DOMAIN` 宏，
+> 整包 zip 下载（站点自带的 /download-index-aid-<id>.html 打包页，2026-09-06 加入）：
+> 页面提供两条线路——Server 1 由 Cloudflare Worker（`CONFIG.WORKER_API`，如
+> `d1.wcdn.date/api/generate-link`）签发带时限的签名链接；Server 2 是备用直链
+> （`dl1.wn01.download` 等，支持 Range/断点）。注意 Server 1 的 Worker 只回应 HTTP/2，
+> 本二进制的 HTTP/1.1 客户端会被 Cloudflare challenge（403），所以 `zip <id> 1` 拿不到
+> 签名链时会**自动回落 Server 2**；`zip <id> 2` 直接走直链。App 卡片上的「下载ZIP /
+> 下载ZIP2」两个按钮单击即下载，**长按复制对应链接**（粘贴到浏览器即可下载，浏览器走
+> HTTP/2 能用 Server 1）。签名链接一次性、不支持 Range、页面有每日限额提示。
+
+> 默认域名：`www.wn10.shop`（2026-09-06 更新；旧镜像 `www.wn09.shop` 已下线连不上）。
+> 编译期只是兜底（`src/wnacg.c` 的 `DEFAULT_API_DOMAIN` 宏，
 > 由 `build.sh`/`build-android.sh` 传入）；运行期由 Java 壳通过 `WNACG_DOMAIN`
 > 环境变量注入到原生二进制，用户在 App「设置」页可随时改成其他镜像，无需重编译。
 
@@ -108,7 +122,7 @@ wnacg cover 257351 https://t4.wnacgimg.date/data/... /sdcard/c.jpg
 #    (第一次会自动下载并编译 mbedTLS 3.6.2 — build-mbedtls-host.sh)
 ./build.sh test            # 顺便跑 tests/ 里的样例 HTML 解析测试
 
-# 2) 手动跑真实链路（需要网络可达 wn09.shop）
+# 2) 手动跑真实链路（需要网络可达 wn10.shop）
 ./wnacg search 百合
 ./wnacg detail 380585
 ./wnacg download 380585 /tmp/dl
@@ -172,19 +186,20 @@ build-tools 命令行。签名：本地/CI 都用 `$WNACG_KEYSTORE` 指向的 ke
 
 ```
 src/
-  wnacg.c      命令行主程序：search/tag/detail/download/cover + URL 编码
+  wnacg.c      命令行主程序：search/tag/detail/download/zip/ziplink/cover + URL 编码
   html.c       HTML 解析：搜索结果列表 + imglist（fast_img_host 变量处理）
-  net.c        HTTP GET、重定向、IPv4-only+5s超时连接、流式读取
+  net.c        HTTP GET/POST、重定向、IPv4-only+5s超时连接、流式读取
   tls.c        mbedTLS 客户端封装（手动驱动引擎，关闭证书校验）
   img_host.c   图床 host 运行期覆盖（g_img_host / WNACG_IMG_HOST）
+  zip.c        zip/ziplink：解析站方打包页 + Server1 签名链 + Server2 直链下载
   webp_bmp.c   cover 命令：WebP→RGBA（libwebp）后转 PNG（见下）；非 WebP 原样落盘
   png_write.c  RGBA→PNG writer（zlib deflate + 自写 CRC32，不依赖 libpng）
 thirdparty/mbedtls/          mbedTLS 3.6.2（源码由 build-mbedtls*.sh 拉取；
                             build-host/ 与 build-android/ 各编一份静态库）
 thirdparty/libwebp/          libwebp 1.3.2（仅 Android 编译期从 tarball 拉取，CI 产物
                             build-android/libwebp.a 供 armeabi 链接；build-host/ 供单测）
-tests/                   样例 HTML 解析单测（parse_test.c）+ WebP→PNG round-trip
-                           （webp_roundtrip.c）
+tests/                   样例 HTML 解析单测（parse_test.c / zip_parse_test.c）
+                          + WebP→PNG round-trip（webp_roundtrip.c）
 android/app/src/main/   Java 壳（minSdk=9）+ manifest + resources
                         + jniLibs/armeabi/libwnacg.so（PIE，API 16+）
                         + assets/wnacg-legacy（非 PIE，API 9–15）
@@ -205,7 +220,7 @@ build.sh / build-android.sh / packapk.sh / build-mbedtls.sh / build-mbedtls-host
 - 证书不校验（见上）。如要开启，改 `src/tls.c` 的 x509 校验回调（当前 `MBEDTLS_SSL_VERIFY_NONE`）。
 - TLS 栈是 mbedTLS 3.6.2（TLS 1.2 + 1.3）。BearSSL 0.6 已彻底弃用（2026-08-30 迁移），
   源码快照已从 git 移除，不再编译。
-- 仅验证过 `www.wn09.shop`；换镜像站在 App 内「设置」页改即可（运行期经 `WNACG_DOMAIN` 环境变量注入原生二进制，无需重编译；编译期 `DEFAULT_API_DOMAIN` 宏仅作兜底）。
+- 仅验证过 `www.wn10.shop`（`www.wn09.shop` 2026-09-06 下线）；换镜像站在 App 内「设置」页改即可（运行期经 `WNACG_DOMAIN` 环境变量注入原生二进制，无需重编译；编译期 `DEFAULT_API_DOMAIN` 宏仅作兜底）。
 - NDK r16b 是硬依赖；更老的 NDK 缺 armeabi，更新的 NDK 抬高了最低 API。
 - 封面缩略图所有 API 均可显示：原生二进制把 WebP 封面解码后转存为 PNG，2.3/3.x 的 BitmapFactory 无 WebP 解码器也能显示（BMP 在 2.3 同样解不出，故用 PNG）。转码链路由 CI 的 `webp_roundtrip` 单测验证（WebP→RGBA→PNG 真数据 round-trip）；2.3 真机封面显示待装包确认。
 - 站点 `f=tag` 只返回第 1 页（翻页为空），属站点行为（见上文 tag 说明）。

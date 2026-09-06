@@ -1,6 +1,7 @@
 #include "net.h"
 #include "tls.h"
 #include "html.h"
+#include "zip.h"
 #include "webp_bmp.h"
 
 #include <stdio.h>
@@ -11,7 +12,7 @@
 #include <sys/types.h>
 
 #ifndef DEFAULT_API_DOMAIN
-#define DEFAULT_API_DOMAIN "www.wn09.shop"
+#define DEFAULT_API_DOMAIN "www.wn10.shop"
 #endif
 
 /* Runtime domain override (see net.h). */
@@ -107,13 +108,18 @@ static void usage(const char *argv0) {
         "  %s search <关键词> [页码]           搜索漫画\n"
         "  %s tag <标签> [页码]               按标签搜索\n"
         "  %s download <漫画ID> [保存目录]    下载整本漫画到目录(单线程)\n"
+        "  %s zip <漫画ID> [1|2] [保存目录]  下载站方整包 zip (1=签名链 2=直链)\n"
+        "  %s ziplink <漫画ID>               打印 zip 下载链接 (长按复制到浏览器)\n"
         "  %s detail <漫画ID>                 打印漫画详情(图数/标签)\n\n"
         "示例:\n"
         "  %s search 百合\n"
         "  %s download 257351 /sdcard/wnacg\n"
+        "  %s zip 257351 2 /sdcard/wnacg\n"
+        "  %s ziplink 257351\n"
         "  说明: search/tag 支持多关键词, 用空格分隔 (如: %s search 百合 汉化);\n"
         "  最后一个纯数字参数视为页码 (如: %s search 百合 汉化 2).\n",
-        argv0, argv0, argv0, argv0, argv0, argv0, argv0, argv0);
+        argv0, argv0, argv0, argv0, argv0, argv0,
+        argv0, argv0, argv0, argv0, argv0, argv0);
 }
 
 int cmd_search(int argc, char **argv, int is_tag) {
@@ -321,6 +327,8 @@ int main(int argc, char **argv) {
     if (strcmp(cmd, "search") == 0)   return cmd_search(argc, argv, 0);
     if (strcmp(cmd, "tag") == 0)      return cmd_search(argc, argv, 1);
     if (strcmp(cmd, "download") == 0)  return cmd_download(argc, argv);
+    if (strcmp(cmd, "zip") == 0)       return cmd_zip(argc, argv);
+    if (strcmp(cmd, "ziplink") == 0)   return cmd_ziplink(argc, argv);
     if (strcmp(cmd, "detail") == 0)   return cmd_detail(argc, argv);
     if (strcmp(cmd, "cover") == 0)    return cmd_cover(argc, argv);
     usage(argv[0]);

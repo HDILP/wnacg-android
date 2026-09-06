@@ -93,7 +93,7 @@ public class MainActivity extends Activity {
 
     /* Settings: mirror domain is user-changeable (the default host can go down).
      * Stored in SharedPreferences; pushed to the native binary via WNACG_DOMAIN. */
-    private static final String DEFAULT_DOMAIN = "www.wn09.shop";
+    private static final String DEFAULT_DOMAIN = "www.wn10.shop";
     private static final String PREFS_NAME = "wnacg_prefs";
     private static final String KEY_DOMAIN = "domain";
     /* Image CDN host (downloads + covers). The site's default fast_img_host
@@ -238,6 +238,8 @@ public class MainActivity extends Activity {
         final TextView title;
         final TextView meta;
         final Button dlBtn;
+        final Button zipBtn;   // 下载ZIP (Server1 签名链, 自动整包)
+        final Button zip2Btn;  // 下载ZIP2 (备用直链)
         long id = -1;
         String coverUrl = "";
 
@@ -335,6 +337,29 @@ public class MainActivity extends Activity {
             });
             textCol.addView(dlBtn);
 
+            // ZIP buttons: click = download the whole packaged archive (saves
+            // re-fetching every page image); long-press = copy the download
+            // link so it can be pasted into a browser. ZIP2 is the direct
+            // backup link (Range/resume friendly).
+            zipBtn = new Button(MainActivity.this);
+            zipBtn.setText(R.string.zip_btn);
+            zipBtn.setTextSize(12);
+            zip2Btn = new Button(MainActivity.this);
+            zip2Btn.setText(R.string.zip_btn2);
+            zip2Btn.setTextSize(12);
+            LinearLayout zipRow = new LinearLayout(MainActivity.this);
+            zipRow.setOrientation(LinearLayout.HORIZONTAL);
+            LinearLayout.LayoutParams zrowlp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            zrowlp.setMargins(0, dp(4), 0, 0);
+            zipRow.setLayoutParams(zrowlp);
+            zipRow.addView(zipBtn);
+            zipRow.addView(zip2Btn);
+            textCol.addView(zipRow);
+            makeZipButton(zipBtn, 1);
+            makeZipButton(zip2Btn, 2);
+
             root.addView(textCol);
         }
 
@@ -366,6 +391,78 @@ public class MainActivity extends Activity {
         d.setCornerRadius(dp(8));
         d.setStroke(1, Color.parseColor("#FFD6DE"));
         return d;
+    }
+
+    /** Wire one ZIP button. server 1 = signed Worker link, 2 = direct backup.
+     *  Click → native `zip <id> <server>` (needs app-side network + storage).
+     *  Long-press → `ziplink <id>` whose ZIP1/ZIP2 lines we copy to the
+     *  clipboard for pasting into a browser (the copy includes the exact URL
+     *  printed by the native binary; we reuse its single-line "ZIPx <url>"
+     *  format). */
+    private void makeZipButton(Button btn, final int server) {
+        btn.setOnClickListener(new android.view.View.OnClickListener() {
+            public void onClick(android.view.View v) {
+                if (btn.getTag() == null) return;      // id not known yet
+                long id = ((Number) btn.getTag()).longValue();
+                execNative("zip " + id + " " + server);
+            }
+        });
+        btn.setOnLongClickListener(new android.view.View.OnLongClickListener() {
+            public boolean onLongClick(android.view.View v) {
+                if (btn.getTag() == null) return false;
+                long id = ((Number) btn.getTag()).longValue();
+                fetchZipLinkIntoClipboard(id, server);
+                return true;
+            }
+        });
+    }
+
+    /** Run `ziplink <id>` off the UI thread and put the ZIP<server> line into
+     *  the clipboard. Uses a short-lived process (ziplink prints fast). */
+    private void fetchZipLinkIntoClipboard(final long id, final int server) {
+        exec.execute(new Runnable() {
+            public void run() {
+                String line = null;
+                try {
+                    String bin = binaryPath();
+                    ProcessBuilder pb = new ProcessBuilder(bin, "ziplink", String.valueOf(id));
+                    pb.environment().put("WNACG_DOMAIN", domain());
+                    pb.environment().put("WNACG_IMG_HOST", imgHost());
+                    Process p = pb.start();
+                    BufferedReader br = new BufferedReader(
+                            new InputStreamReader(p.getInputStream(), "UTF-8"));
+                    String want = "ZIP" + server + " ";
+                    String l;
+                    while ((l = br.readLine()) != null) {
+                        if (l.startsWith(want) && l.length() > want.length()) {
+                            line = l.substring(want.length()).trim();
+                            break;
+                        }
+                    }
+                    // drain + wait so the process exits promptly
+                    while (br.readLine() != null) { }
+                    br.close();
+                    p.waitFor();
+                } catch (Exception e) {
+                    line = null;
+                }
+                final String url = line;
+                runOnUiThread(new Runnable() {
+                    public void run() {
+                        if (url == null || url.equals("无")) {
+                            android.widget.Toast.makeText(MainActivity.this,
+                                    "获取链接失败，试试另一个按钮", android.widget.Toast.LENGTH_SHORT).show();
+                        } else {
+                            android.content.ClipboardManager cm =
+                                (android.content.ClipboardManager) getSystemService(android.content.Context.CLIPBOARD_SERVICE);
+                            cm.setText(url);
+                            android.widget.Toast.makeText(MainActivity.this,
+                                    R.string.copied_zip_link, android.widget.Toast.LENGTH_LONG).show();
+                        }
+                    }
+                });
+            }
+        });
     }
 
     private void addInfoLine(final String text) {
@@ -551,7 +648,7 @@ public class MainActivity extends Activity {
                     showResultsView();
                 }
             });
-        } else if (verb.equals("download")) {
+        } else if (verb.equals("download") || verb.equals("zip")) {
             runOnUiThread(new Runnable() {
                 public void run() {
                     mode = Mode.RESULTS;
@@ -595,6 +692,8 @@ public class MainActivity extends Activity {
                     int rc = p.waitFor();
                     if (mode == Mode.RESULTS && verb.equals("download")) {
                         setStatus("下载结束 [进程退出码: " + rc + "]");
+                    } else if (mode == Mode.RESULTS && verb.equals("zip")) {
+                        setStatus("ZIP下载结束 [进程退出码: " + rc + "]");
                     } else if (mode == Mode.LOG) {
                         appendLog("\n[进程退出码: " + rc + "]\n");
                     } else {
@@ -648,11 +747,17 @@ public class MainActivity extends Activity {
             });
             return;
         }
-        if (line.startsWith("完成:") || line.matches(".*成功\\s*\\d+.*失败\\s*\\d+.*")) {
+        // --- zip status lines: "开始下载 zip 到 ...", "完成: zip 成功/失败 ..." ---
+        if (line.startsWith("开始下载 zip") || line.startsWith("[zip]")) {
+            addInfoLine(line.trim());
+            return;
+        }
+        if (line.startsWith("完成:")) {
             setStatus(line.trim());
-            runOnUiThread(new Runnable() {
-                public void run() { progress.setProgress(progress.getMax()); }
-            });
+            return;
+        }
+        if (line.startsWith("ZIP1 ") || line.startsWith("ZIP2 ")) {
+            // ziplink output routed to the log in LOG mode; nothing else to do
             return;
         }
         // --- search cards ---
@@ -688,6 +793,16 @@ public class MainActivity extends Activity {
                     final SearchCard card = curCard;
                     runOnUiThread(new Runnable() {
                         public void run() { card.meta.setText(extra); }
+                    });
+                }
+                // ZIP buttons need the id; store it as the tag when it appears.
+                if (curCard.id > 0) {
+                    final SearchCard card = curCard;
+                    runOnUiThread(new Runnable() {
+                        public void run() {
+                            card.zipBtn.setTag(Long.valueOf(card.id));
+                            card.zip2Btn.setTag(Long.valueOf(card.id));
+                        }
                     });
                 }
                 return;
