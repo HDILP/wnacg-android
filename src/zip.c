@@ -18,6 +18,15 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 
+#ifdef __ANDROID__
+/* On Android, net.h replaces printf/fprintf with write()-based emitters, but
+ * fflush(stdout) still references the FILE* symbol bionic does not export for
+ * a standalone executable. zip.c uses fflush after printing status lines; on
+ * Android stdout is unbuffered (write() is direct), so dropping the flush is
+ * safe. Provide a no-op so the file compiles unchanged on both targets. */
+#define fflush(x) ((void)0)
+#endif
+
 static char *xstrndup(const char *s, size_t n) {
     char *p = malloc(n + 1);
     if (!p) return NULL;
