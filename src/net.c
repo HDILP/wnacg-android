@@ -269,7 +269,27 @@ static int parse_headers(conn_reader *cr, int *status_out,
     return 0;
 }
 
-static int read_chunked_body(conn_reader *cr, http_response *r) {
+/* Body read length cap. Cover thumbs are ≤ a few hundred KB; the site's
+ * whole-comic zip is ~13 MB. We stream page bodies but a cover subprocess on
+ * a 2.3 device only has ~24 MB heaps — WebPDecodeRGBA already allocates
+ * w*h*4 on top, so buffering the raw WebP first is fine as long as it stays
+ * small. Cap at 64 MB so a misbehaving/large endpoint can't OOM us.
+ * Must be defined before the reader functions below use it. */
+#ifndef WNACG_MAX_BODY
+#define WNACG_MAX_BODY (64u * 1024 * 1024)
+#endif
+
+/* Body length cap check: grow the buffer only while total stays under
+ * WNACG_MAX_BODY. Sets r->truncated when the cap would be exceeded. */
+static int body_append_capped(http_response *r, const char *buf, size_t len) {
+    if (r->body_len + len + 1 > WNACG_MAX_BODY) {
+        r->truncated = 1;
+        return -1;
+    }
+    return body_append(r, buf, len);
+}
+
+static int read_chunked_body_capped(conn_reader *cr, http_response *r) {
     for (;;) {
         char line[256];
         int n = reader_readline(cr, line, sizeof(line));
@@ -282,6 +302,10 @@ static int read_chunked_body(conn_reader *cr, http_response *r) {
             /* last chunk; read trailing CRLF */
             reader_readline(cr, line, sizeof(line));
             break;
+        }
+        if (r->body_len + (size_t)size > WNACG_MAX_BODY) {
+            r->truncated = 1;
+            return -1;
         }
         /* read 'size' bytes */
         char *chunk = malloc(size);
@@ -297,15 +321,23 @@ static int read_chunked_body(conn_reader *cr, http_response *r) {
     return 0;
 }
 
-static int read_fixed_body(conn_reader *cr, http_response *r, long len) {
+static int read_fixed_body_capped(conn_reader *cr, http_response *r, long len) {
+    if (len >= 0 && (unsigned long)len + r->body_len + 1 > WNACG_MAX_BODY) {
+        r->truncated = 1;
+        return -1;
+    }
     if (len < 0) {
-        /* unknown: read until EOF */
+        /* unknown: read until EOF (capped) */
         for (;;) {
             if (cr->pos >= cr->len) {
                 if (reader_fill(cr) != 0) break;
                 if (cr->pos >= cr->len) break;
             }
             size_t avail = cr->len - cr->pos;
+            if (r->body_len + avail + 1 > WNACG_MAX_BODY) {
+                r->truncated = 1;
+                break;
+            }
             if (body_append(r, cr->buf + cr->pos, avail) != 0) return -1;
             cr->pos += avail;
         }
@@ -319,7 +351,7 @@ static int read_fixed_body(conn_reader *cr, http_response *r, long len) {
         }
         size_t avail = cr->len - cr->pos;
         size_t take = avail < (size_t)remaining ? avail : (size_t)remaining;
-        if (body_append(r, cr->buf + cr->pos, take) != 0) return -1;
+        if (body_append_capped(r, cr->buf + cr->pos, take) != 0) return -1;
         cr->pos += take;
         remaining -= (long)take;
     }
@@ -458,14 +490,24 @@ static int http_req(const char *url, const char *referer, const char *cookie,
         out->location = NULL;
 
         if (chunked) {
-            if (read_chunked_body(&cr, out) != 0) { /* best effort */ }
+            if (read_chunked_body_capped(&cr, out) != 0) { /* best effort */ }
         } else {
-            if (read_fixed_body(&cr, out, cl) != 0) { /* best effort */ }
+            if (read_fixed_body_capped(&cr, out, cl) != 0) { /* best effort */ }
         }
         out->status = status;
 
         if (tls_ok) tls_close(tls_ctx); else close(fd);
         free(cr.buf);
+
+        /* if we stopped early because of the cap, drop the truncated body —
+         * the caller treats status!=200/empty as failure anyway */
+        if (out->truncated) {
+            free(out->body);
+            out->body = NULL;
+            out->body_len = 0;
+            out->body_cap = 0;
+            out->truncated = 0;
+        }
 
         /* redirect? */
         if ((status == 301 || status == 302 || status == 303 ||
@@ -525,4 +567,5 @@ void free_http_response(http_response *r) {
     r->body = NULL;
     r->location = NULL;
     r->body_len = r->body_cap = 0;
+    r->truncated = 0;
 }

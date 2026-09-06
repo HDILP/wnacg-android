@@ -44,6 +44,7 @@ typedef struct {
     char *body;         /* malloc'd response body (NUL not guaranteed) */
     size_t body_len;
     int body_cap;
+    int truncated;      /* body read stopped early (WNACG_MAX_BODY cap) */
     char *location;     /* malloc'd redirect Location if 3xx, else NULL */
 } http_response;
 
