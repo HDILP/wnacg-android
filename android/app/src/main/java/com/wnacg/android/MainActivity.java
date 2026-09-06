@@ -179,7 +179,7 @@ public class MainActivity extends Activity {
 
         // On first launch (Android 11+), open the All-Files-Access grant page so
         // downloads can go to /sdcard/downloads.
-        out.setText("wnacg v1.8\n");  // version stamp: confirms which build is installed
+        out.setText("wnacg v1.9\n");  // version stamp: confirms which build is installed
         requestStorageAccess();
         showLogView();
 
@@ -856,7 +856,14 @@ public class MainActivity extends Activity {
     }
 
     /** Download one cover through the native binary (same TLS/IPv4 fixes),
-     *  cached under cacheDir/covers/<id>.<ext>. */
+     *  cached under cacheDir/covers/<id>.<ext>.
+     *
+     *  NOTE: the native cover process prints diagnostics to stderr (e.g.
+     *  "WebP decode failed" / "network error"). Those go to logcat via a
+     *  ReaderThread with live=false that ONLY logs, so when a cover fails on
+     *  a real device the reason is in logcat:
+     *    adb logcat -s wnacg:I wnacg:E *:S
+     */
     private File fetchCover(String url) {
         long id = 0;
         Matcher nm = NUM_RUN.matcher(url);
@@ -952,6 +959,7 @@ public class MainActivity extends Activity {
                 String l;
                 while ((l = br.readLine()) != null) {
                     if (live) handleLine(l);
+                    else Log.w(TAG, "cover: " + l);   // native cover stderr → logcat
                 }
                 br.close();
             } catch (IOException e) {
