@@ -249,7 +249,9 @@ public class MainActivity extends Activity {
 
             root = new LinearLayout(MainActivity.this);
             root.setOrientation(LinearLayout.HORIZONTAL);
-            root.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            // Gravity TOP: the card is now wrap-content tall (three button rows
+            // don't fit the old fixed height), so center-vertical would clip.
+            root.setGravity(android.view.Gravity.TOP);
             root.setPadding(dp(8), dp(6), dp(8), dp(6));
             root.setBackgroundDrawable(cardBg());
             // Long-press the whole card to copy its full info (title + ID +
@@ -278,7 +280,8 @@ public class MainActivity extends Activity {
                 }
             });
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.FILL_PARENT, cardH);
+                    LinearLayout.LayoutParams.FILL_PARENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
             lp.setMargins(0, 0, 0, dp(6));
             root.setLayoutParams(lp);
 
@@ -288,15 +291,19 @@ public class MainActivity extends Activity {
             cover.setScaleType(ImageView.ScaleType.CENTER_CROP);
             cover.setVisibility(android.view.View.GONE);
             final int coverW = (int) (cardH * 0.72f + 0.5f); // ~3:4 aspect
-            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(coverW, cardH);
+            LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(
+                    coverW, LinearLayout.LayoutParams.WRAP_CONTENT);
             clp.setMargins(0, 0, dp(8), 0);
             cover.setLayoutParams(clp);
+            cover.setAdjustViewBounds(true);   // scale height to keep 3:4
             root.addView(cover);
 
             // text column takes the rest of the width.
             LinearLayout textCol = new LinearLayout(MainActivity.this);
             textCol.setOrientation(LinearLayout.VERTICAL);
-            textCol.setGravity(android.view.Gravity.CENTER_VERTICAL);
+            // TOP: buttons stack under the text; centering a taller-than-card
+            // column clips the bottom rows on the old fixed-height card.
+            textCol.setGravity(android.view.Gravity.TOP);
             LinearLayout.LayoutParams tlp = new LinearLayout.LayoutParams(
                     0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
             textCol.setLayoutParams(tlp);
@@ -325,10 +332,17 @@ public class MainActivity extends Activity {
             dlBtn = new Button(MainActivity.this);
             dlBtn.setText("下载");
             dlBtn.setTextSize(12);
+            // API 9 buttons have a large intrinsic minWidth/minHeight (~64dip/
+            // 48dip from the Theme.Light style). Two buttons side by side plus
+            // the ZIP row blow the text column width; drop them so WRAP_CONTENT
+            // is honored and the rows stay inside the card.
+            dlBtn.setMinWidth(0);
+            dlBtn.setMinHeight(0);
+            dlBtn.setPadding(dp(10), dp(3), dp(10), dp(3));
             LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-            blp.setMargins(0, dp(4), 0, 0);
+            blp.setMargins(0, dp(3), 0, 0);
             dlBtn.setLayoutParams(blp);
             dlBtn.setOnClickListener(new android.view.View.OnClickListener() {
                 public void onClick(android.view.View v) {
@@ -340,19 +354,28 @@ public class MainActivity extends Activity {
             // ZIP buttons: click = download the whole packaged archive (saves
             // re-fetching every page image); long-press = copy the download
             // link so it can be pasted into a browser. ZIP2 is the direct
-            // backup link (Range/resume friendly).
+            // backup link (Range/resume friendly). Compact padding + no
+            // intrinsic min sizes so both fit side by side in the card.
             zipBtn = new Button(MainActivity.this);
             zipBtn.setText(R.string.zip_btn);
-            zipBtn.setTextSize(12);
+            zipBtn.setTextSize(11);
+            zipBtn.setMinWidth(0);
+            zipBtn.setMinHeight(0);
+            zipBtn.setPadding(dp(8), dp(3), dp(8), dp(3));
+            zipBtn.setIncludeFontPadding(false);
             zip2Btn = new Button(MainActivity.this);
             zip2Btn.setText(R.string.zip_btn2);
-            zip2Btn.setTextSize(12);
+            zip2Btn.setTextSize(11);
+            zip2Btn.setMinWidth(0);
+            zip2Btn.setMinHeight(0);
+            zip2Btn.setPadding(dp(8), dp(3), dp(8), dp(3));
+            zip2Btn.setIncludeFontPadding(false);
             LinearLayout zipRow = new LinearLayout(MainActivity.this);
             zipRow.setOrientation(LinearLayout.HORIZONTAL);
             LinearLayout.LayoutParams zrowlp = new LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.WRAP_CONTENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT);
-            zrowlp.setMargins(0, dp(4), 0, 0);
+            zrowlp.setMargins(0, dp(3), 0, 0);
             zipRow.setLayoutParams(zrowlp);
             zipRow.addView(zipBtn);
             zipRow.addView(zip2Btn);
@@ -363,15 +386,20 @@ public class MainActivity extends Activity {
             root.addView(textCol);
         }
 
-        /** Place a decoded cover bitmap sized to the fixed cover slot. */
+        /** Place a decoded cover bitmap into the fixed-width cover slot.
+         *  The card is wrap-content tall now; scale the bitmap to the slot
+         *  width and let its height follow the source aspect ratio, so the
+         *  cover never stretches and the card can grow taller than the old
+         *  fixed height when the buttons demand it. */
         void setCover(Bitmap bmp) {
             if (bmp == null) return;
             float density = getResources().getDisplayMetrics().density;
             int cardH = (int) (CARD_H_DP * density + 0.5f);
             int coverW = (int) (cardH * 0.72f + 0.5f);
+            int targetH = Math.max(1, bmp.getHeight() * coverW / Math.max(1, bmp.getWidth()));
             Bitmap small;
             try {
-                small = Bitmap.createScaledBitmap(bmp, coverW, cardH, true);
+                small = Bitmap.createScaledBitmap(bmp, coverW, targetH, true);
             } catch (OutOfMemoryError e) {
                 meta.setText(meta.getText() + "  (封面过大)");
                 return;
